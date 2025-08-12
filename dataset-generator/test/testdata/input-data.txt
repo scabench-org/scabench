@@ -1,0 +1,41 @@
+CodeArena
+=========
+
+Reports list
+
+URL:
+Local: codearena-reports.html
+
+Sample report
+
+URL: https://code4rena.com/reports/2025-04-virtuals-protocol
+Local: codearena-2025-04-virtuals-protocol.html
+
+Cantina
+=======
+
+Reports list
+xw
+URL: https://cantina.xyz/portfolioxw
+Local: cantina-portfolio.html
+
+Sample report
+
+URL: https://cantina.xyz/portfolio/80b2fc65-3c2e-4ae7-8e48-6383fa936e6d
+Local: cantina-sonic.html
+
+Sherlock
+========
+
+Reports list
+
+URL: https://github.com/sherlock-protocol/sherlock-reports/tree/main/audits
+Hosted on Github! Each report is an individual PDF that needs to be parsed...
+Local: sherlock-audits.html
+
+Sample report
+
+URL: https://cantina.xyz/portfolio/80b2fc65-3c2e-4ae7-8e48-6383fa936e6d
+Local: sherlock-metalend.pdf
+
+

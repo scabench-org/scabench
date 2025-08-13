@@ -249,8 +249,9 @@ class Code4renaScraper(BaseScraper):
         
         # Build a map of vulnerability IDs to their full content sections
         vuln_content_map = {}
+        numbered_issues = {}  # Track numbered issues separately
         
-        # Find all headers with vulnerability IDs like [H-01], [M-01], [L-01]
+        # Find all headers with vulnerability IDs
         for header in soup.find_all(['h2', 'h3', 'h4']):
             header_text = header.get_text(strip=True)
             
@@ -272,7 +273,7 @@ class Code4renaScraper(BaseScraper):
                     # Stop if we hit another vulnerability header
                     if current.name in ['h1', 'h2', 'h3', 'h4']:
                         current_text = current.get_text(strip=True)
-                        if re.search(r'\[([HML])-\d+\]', current_text):
+                        if re.search(r'\[([HML])-\d+\]|\[\d+\]', current_text):
                             break
                     
                     # Collect text content
@@ -295,6 +296,62 @@ class Code4renaScraper(BaseScraper):
                     'description': description,
                     'severity': severity
                 }
+            else:
+                # Check for numbered format [01], [02], etc.
+                match = re.search(r'\[(\d+)\]', header_text)
+                if match:
+                    finding_num = match.group(1)
+                    finding_key = f"NC-{finding_num.zfill(2)}"  # Mark as non-critical initially
+                    
+                    # Extract title - remove the ID prefix
+                    title = re.sub(r'^\[\d+\]\s*', '', header_text).strip()
+                    
+                    # Extract the content following this header until the next similar header
+                    content_parts = []
+                    current = header.find_next_sibling()
+                    
+                    while current:
+                        # Stop if we hit another vulnerability header
+                        if current.name in ['h1', 'h2', 'h3', 'h4']:
+                            current_text = current.get_text(strip=True)
+                            if re.search(r'\[([HML])-\d+\]|\[\d+\]', current_text):
+                                break
+                        
+                        # Collect text content
+                        if current.name in ['p', 'pre', 'ul', 'ol', 'blockquote']:
+                            text = current.get_text(separator='\n', strip=True)
+                            if text:
+                                content_parts.append(text)
+                        
+                        current = current.find_next_sibling()
+                    
+                    # Join the content parts
+                    description = '\n\n'.join(content_parts)
+                    
+                    numbered_issues[finding_key] = {
+                        'title': title,
+                        'description': description,
+                        'severity': 'low'  # Will be low if these are the only issues
+                    }
+        
+        # If we found NO H/M/L vulnerabilities but we have numbered issues,
+        # treat the numbered issues as the main vulnerabilities (like in Upside contest)
+        if not vuln_content_map and numbered_issues:
+            # Check if this looks like a contest with only low-risk issues
+            # by looking for "Low Risk and Non-Critical Issues" header
+            low_risk_header = None
+            for header in soup.find_all(['h1', 'h2']):
+                header_text = header.get_text(strip=True)
+                if 'Low Risk and Non-Critical Issues' in header_text:
+                    low_risk_header = header
+                    break
+            
+            if low_risk_header:
+                # These numbered issues are the main vulnerabilities
+                for key, issue in numbered_issues.items():
+                    # Rename key from NC-XX to L-XX
+                    new_key = key.replace('NC-', 'L-')
+                    vuln_content_map[new_key] = issue
         
         # If we found vulnerabilities with content, use them
         if vuln_content_map:

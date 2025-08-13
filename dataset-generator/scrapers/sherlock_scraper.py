@@ -448,7 +448,8 @@ class SherlockScraper(BaseScraper):
                 f"Extracted {len(unique_vulnerabilities)} vulnerabilities from Sherlock PDF: "
                 f"High={sum(1 for v in unique_vulnerabilities if v.severity == 'high')}, "
                 f"Medium={sum(1 for v in unique_vulnerabilities if v.severity == 'medium')}, "
-                f"Low={sum(1 for v in unique_vulnerabilities if v.severity == 'low')}"
+                f"Low={sum(1 for v in unique_vulnerabilities if v.severity == 'low')}, "
+                f"Informational={sum(1 for v in unique_vulnerabilities if v.severity == 'informational')}"
             )
             
             return unique_vulnerabilities

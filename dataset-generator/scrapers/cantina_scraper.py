@@ -284,7 +284,7 @@ class CantinaScraper(BaseScraper):
             # Structure: h2 "Findings" -> h3 "Critical Risk" -> h4 (finding titles)
             
             # Track finding counts per severity
-            finding_counts = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0}
+            finding_counts = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'informational': 0}
             
             # Find all severity sections
             severity_sections = [
@@ -369,7 +369,8 @@ class CantinaScraper(BaseScraper):
                 f"Critical={finding_counts.get('critical', 0)}, "
                 f"High={finding_counts.get('high', 0)}, "
                 f"Medium={finding_counts.get('medium', 0)}, "
-                f"Low={finding_counts.get('low', 0)}"
+                f"Low={finding_counts.get('low', 0)}, "
+                f"Informational={finding_counts.get('informational', 0)}"
             )
             
         except Exception as e:

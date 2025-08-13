@@ -31,23 +31,44 @@ class SherlockScraper(BaseScraper):
         contests = []
         
         try:
-            api_url = f"{self.GITHUB_API_URL}/contents/audits"
-            response = requests.get(api_url, timeout=30)
-            response.raise_for_status()
-            
-            files = response.json()
+            if self.test_mode and self.test_data_dir:
+                # Load from local test data
+                test_file = os.path.join(self.test_data_dir, 'sherlock-audits.html')
+                with open(test_file, 'r', encoding='utf-8') as f:
+                    html_content = f.read()
+                
+                # Parse the HTML to extract file list
+                soup = BeautifulSoup(html_content, 'html.parser')
+                
+                # Look for the embedded JSON data
+                script_tag = soup.find('script', {'type': 'application/json', 'data-target': 'react-app.embeddedData'})
+                if script_tag:
+                    import json
+                    data = json.loads(script_tag.string)
+                    files = data.get('payload', {}).get('tree', {}).get('items', [])
+                else:
+                    files = []
+            else:
+                api_url = f"{self.GITHUB_API_URL}/contents/audits"
+                response = requests.get(api_url, timeout=30)
+                response.raise_for_status()
+                
+                files = response.json()
             
             for file in files:
-                if file['name'].endswith('.pdf'):
-                    contest_info = self._parse_filename(file['name'])
+                # Handle both test mode (dict with 'name' key) and API mode (dict with 'name' key)
+                filename = file.get('name', '') if isinstance(file, dict) else str(file)
+                
+                if filename.endswith('.pdf'):
+                    contest_info = self._parse_filename(filename)
                     if contest_info:
                         contest_date = contest_info.get('date')
                         if contest_date and period_start <= contest_date <= period_end:
                             contests.append({
-                                'id': file['name'].replace('.pdf', ''),
-                                'name': contest_info.get('name', file['name']),
+                                'id': filename.replace('.pdf', ''),
+                                'name': contest_info.get('name', filename),
                                 'date': contest_date,
-                                'pdf_url': file['download_url']
+                                'pdf_url': file.get('download_url', '') if isinstance(file, dict) else f"{self.GITHUB_RAW_URL}/audits/{filename}"
                             })
             
             self.logger.info(f"Found {len(contests)} Sherlock contests in date range")
@@ -91,16 +112,41 @@ class SherlockScraper(BaseScraper):
         return None
     
     def _parse_filename(self, filename: str) -> Optional[Dict[str, Any]]:
-        date_pattern = r'(\d{4})[-_](\d{2})[-_](\d{2})'
+        # Date pattern: YYYY.MM.DD or YYYY.DD.MM (some files have day-month swapped)
+        date_pattern = r'(\d{4})\.(\d{1,2})\.(\d{1,2})'
         match = re.search(date_pattern, filename)
         
         if match:
-            year, month, day = match.groups()
-            contest_date = datetime(int(year), int(month), int(day))
+            year, first_num, second_num = match.groups()
+            year = int(year)
+            first_num = int(first_num)
+            second_num = int(second_num)
             
+            # Try to determine if it's MM.DD or DD.MM format
+            # Most files seem to use YYYY.MM.DD format
+            if first_num <= 12:
+                month = first_num
+                day = second_num
+            else:
+                # If first number > 12, it must be day
+                month = second_num
+                day = first_num
+            
+            # Handle edge cases where day might be invalid
+            try:
+                contest_date = datetime(year, month, day)
+            except ValueError:
+                # Try swapping month and day
+                try:
+                    contest_date = datetime(year, day, month)
+                except ValueError:
+                    self.logger.warning(f"Could not parse date from filename: {filename}")
+                    return None
+            
+            # Extract name by removing date and .pdf
             name = filename.replace('.pdf', '')
-            name = re.sub(date_pattern, '', name)
-            name = name.strip('-_')
+            name = re.sub(date_pattern + r'\s*-?\s*', '', name)
+            name = name.strip('- ')
             
             return {
                 'name': name or 'Unknown',
@@ -120,6 +166,10 @@ class SherlockScraper(BaseScraper):
             for page_num in range(len(pdf_reader.pages)):
                 page = pdf_reader.pages[page_num]
                 page_text = page.extract_text()
+                
+                # Fix common PDF extraction issues with missing spaces
+                page_text = self._fix_pdf_spacing(page_text)
+                
                 full_text += page_text + "\n"
             
             # Extract project information
@@ -210,92 +260,141 @@ class SherlockScraper(BaseScraper):
         vulnerabilities = []
         
         try:
-            # Common patterns in Sherlock reports
-            # Pattern 1: "High Risk: [Title]"
-            # Pattern 2: "Medium Risk: [Title]"
-            # Pattern 3: "H-01: [Title]", "M-01: [Title]"
-            # Pattern 4: "Issue #1: [Title] (High/Medium/Low)"
+            # Sherlock reports typically have issues in format:
+            # "Issue H-1: [Title]" or "Issue M-01: [Title]" etc.
+            # followed by Source URL and complete vulnerability details
             
-            # Track finding counts
-            finding_counts = {'high': 0, 'medium': 0, 'low': 0}
-            
-            # Split text into lines for easier processing
-            lines = text.split('\n')
-            
-            # Pattern 1: Look for severity markers followed by titles
-            severity_patterns = [
-                (r'High\s+(?:Risk|Severity)[:\s]+(.+)', 'high'),
-                (r'Medium\s+(?:Risk|Severity)[:\s]+(.+)', 'medium'),
-                (r'Low\s+(?:Risk|Severity)[:\s]+(.+)', 'low'),
-                (r'Critical\s+(?:Risk|Severity)[:\s]+(.+)', 'critical')
-            ]
-            
-            for pattern, severity in severity_patterns:
-                matches = re.finditer(pattern, text, re.IGNORECASE | re.MULTILINE)
-                for match in matches:
-                    title = match.group(1).strip()
-                    if title and len(title) > 5 and len(title) < 200:
-                        finding_counts[severity] += 1
-                        finding_id = f"{contest_id}_{severity[0].upper()}-{finding_counts[severity]:02d}"
-                        
-                        vuln = Vulnerability(
-                            finding_id=finding_id,
-                            severity=severity,
-                            title=title,
-                            description=""
-                        )
-                        vulnerabilities.append(vuln)
-            
-            # Pattern 2: Look for H-01, M-01, L-01 style findings
-            finding_patterns = [
-                (r'H-(\d+)[:\s]+(.+?)(?=\n|$)', 'high'),
-                (r'M-(\d+)[:\s]+(.+?)(?=\n|$)', 'medium'),
-                (r'L-(\d+)[:\s]+(.+?)(?=\n|$)', 'low')
-            ]
-            
-            for pattern, severity in finding_patterns:
-                matches = re.finditer(pattern, text, re.MULTILINE)
-                for match in matches:
-                    finding_num = match.group(1)
-                    title = match.group(2).strip()
-                    
-                    if title and len(title) > 5:
-                        # Clean up title
-                        title = re.sub(r'\s+', ' ', title)  # Normalize whitespace
-                        title = title[:200]  # Limit length
-                        
-                        finding_id = f"{contest_id}_{severity[0].upper()}-{finding_num.zfill(2)}"
-                        
-                        # Check if we already have this finding
-                        if not any(v.finding_id == finding_id for v in vulnerabilities):
-                            vuln = Vulnerability(
-                                finding_id=finding_id,
-                                severity=severity,
-                                title=title,
-                                description=""
-                            )
-                            vulnerabilities.append(vuln)
-            
-            # Pattern 3: Look for "Issue #X:" patterns
-            issue_pattern = r'Issue\s+#(\d+)[:\s]+(.+?)\s*\(([Hh]igh|[Mm]edium|[Ll]ow|[Cc]ritical)\)'
-            matches = re.finditer(issue_pattern, text, re.MULTILINE)
+            # Pattern to find issues with their COMPLETE content
+            issue_pattern = r'Issue\s+([HMLhml])-?(\d+)[:\s]+(.+?)(?=Issue\s+[HMLhml]-?\d+|$)'
+            matches = re.finditer(issue_pattern, text, re.DOTALL)
             
             for match in matches:
-                issue_num = match.group(1)
-                title = match.group(2).strip()
-                severity = match.group(3).lower()
+                severity_letter = match.group(1).upper()
+                issue_num = match.group(2)
+                content = match.group(3)
                 
-                if title and len(title) > 5:
-                    finding_id = f"{contest_id}_Issue-{issue_num.zfill(2)}"
-                    
-                    if not any(v.finding_id == finding_id for v in vulnerabilities):
-                        vuln = Vulnerability(
-                            finding_id=finding_id,
-                            severity=severity,
-                            title=title,
-                            description=""
-                        )
-                        vulnerabilities.append(vuln)
+                # Map letter to severity
+                severity_map = {'H': 'high', 'M': 'medium', 'L': 'low'}
+                severity = severity_map.get(severity_letter, 'medium')
+                
+                # Extract title (first line of content)
+                lines = content.split('\n')
+                title = lines[0].strip()
+                
+                # Build complete description with ALL sections
+                description_parts = []
+                
+                # Extract source URL if present
+                source_match = re.search(r'Source:\s*(https?://[^\s]+)', content)
+                if source_match:
+                    description_parts.append(f"Source: {source_match.group(1)}")
+                    description_parts.append("")  # Add blank line
+                
+                # Extract all main sections
+                sections_to_extract = [
+                    ('Summary', r'Summary\s*\n(.+?)(?=\n(?:Vulnerability Detail|Impact|Code Snippet|Tool Used|Recommendation|Discussion|Resolution|$))'),
+                    ('Vulnerability Detail', r'Vulnerability Detail\s*\n(.+?)(?=\n(?:Impact|Code Snippet|Tool Used|Recommendation|Discussion|Resolution|$))'),
+                    ('Impact', r'Impact\s*\n(.+?)(?=\n(?:Code Snippet|Tool Used|Recommendation|Discussion|Resolution|$))'),
+                    ('Proof of Concept', r'(?:Proof of Concept|PoC)\s*\n(.+?)(?=\n(?:Code Snippet|Tool Used|Recommendation|Discussion|Resolution|$))'),
+                    ('Code Snippet', r'Code Snippet\s*\n(.+?)(?=\n(?:Tool Used|Recommendation|Discussion|Resolution|$))'),
+                    ('Tool Used', r'Tool Used\s*\n(.+?)(?=\n(?:Recommendation|Discussion|Resolution|$))'),
+                    ('Recommendation', r'Recommendation\s*\n(.+?)(?=\n(?:Discussion|Resolution|$))')
+                ]
+                
+                for section_name, pattern in sections_to_extract:
+                    section_match = re.search(pattern, content, re.DOTALL)
+                    if section_match:
+                        section_text = section_match.group(1).strip()
+                        
+                        # Clean up excessive whitespace but preserve code formatting
+                        if section_name in ['Code Snippet', 'Proof of Concept']:
+                            # For code sections, preserve some formatting but fix spacing
+                            # Don't normalize all whitespace, just clean up excessive newlines
+                            section_text = re.sub(r'\n{3,}', '\n\n', section_text)
+                        else:
+                            # For text sections, normalize whitespace more aggressively
+                            # This will help with readability but might lose some formatting
+                            section_text = re.sub(r'\s+', ' ', section_text)
+                        
+                        if section_text:
+                            description_parts.append(f"**{section_name}:**")
+                            description_parts.append(section_text)
+                            description_parts.append("")  # Add blank line between sections
+                
+                # If we couldn't extract structured sections, fall back to getting all content
+                if len(description_parts) <= 2:  # Only source URL or nothing
+                    # Clean and include all content after the title
+                    all_content = '\n'.join(lines[1:])
+                    all_content = re.sub(r'\n{3,}', '\n\n', all_content)
+                    description_parts.append(all_content)
+                
+                # Join all parts into complete description
+                description = '\n'.join(description_parts)
+                
+                # Don't limit the description length - we want COMPLETE information
+                # Only clean up trailing whitespace
+                description = description.strip()
+                
+                finding_id = f"{contest_id}_{severity_letter}-{issue_num.zfill(2)}"
+                
+                vuln = Vulnerability(
+                    finding_id=finding_id,
+                    severity=severity,
+                    title=title[:500],  # Reasonable title length limit
+                    description=description  # COMPLETE description, no truncation
+                )
+                vulnerabilities.append(vuln)
+            
+            # If no issues found with "Issue" pattern, try other patterns
+            if not vulnerabilities:
+                # Pattern 2: Look for H-01, M-01, L-01 style findings
+                finding_patterns = [
+                    (r'([HML])-(\d+)[:\s]+(.+?)(?=(?:[HML]-\d+|Source:|$))', None)
+                ]
+                
+                for pattern, _ in finding_patterns:
+                    matches = re.finditer(pattern, text, re.DOTALL)
+                    for match in matches:
+                        severity_letter = match.group(1).upper()
+                        finding_num = match.group(2)
+                        content = match.group(3)
+                        
+                        # Map letter to severity
+                        severity_map = {'H': 'high', 'M': 'medium', 'L': 'low'}
+                        severity = severity_map.get(severity_letter, 'medium')
+                        
+                        # Extract title (first line)
+                        lines = content.split('\n')
+                        title = lines[0].strip()
+                        
+                        if title and len(title) > 5:
+                            # Clean up title
+                            title = re.sub(r'\s+', ' ', title)[:200]
+                            
+                            # Extract source URL from content
+                            source_url = ""
+                            source_match = re.search(r'Source:\s*(https?://[^\s]+)', content)
+                            if source_match:
+                                source_url = f"Source: {source_match.group(1)}"
+                            
+                            # Get description from rest of content
+                            description_text = ' '.join(lines[1:10])  # Get next few lines
+                            description_text = re.sub(r'\s+', ' ', description_text)[:300]
+                            
+                            description = f"{source_url} {description_text}".strip()[:500]
+                            
+                            finding_id = f"{contest_id}_{severity_letter}-{finding_num.zfill(2)}"
+                            
+                            # Check if we already have this finding
+                            if not any(v.finding_id == finding_id for v in vulnerabilities):
+                                vuln = Vulnerability(
+                                    finding_id=finding_id,
+                                    severity=severity,
+                                    title=title,
+                                    description=description
+                                )
+                                vulnerabilities.append(vuln)
+            
             
             # If no vulnerabilities found with patterns, try a more general approach
             if not vulnerabilities:
@@ -357,6 +456,99 @@ class SherlockScraper(BaseScraper):
         except Exception as e:
             self.logger.error(f"Error extracting vulnerabilities from PDF: {e}")
             return []
+    
+    def _fix_pdf_spacing(self, text: str) -> str:
+        """Fix common PDF text extraction issues with missing spaces"""
+        
+        # Fix missing spaces between words
+        # Add space before capital letters that follow lowercase letters (camelCase -> camel Case)
+        text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
+        
+        # Fix specific patterns where words are commonly concatenated
+        # Add space between letter and number combinations
+        text = re.sub(r'([a-zA-Z])(\d)', r'\1 \2', text)
+        text = re.sub(r'(\d)([a-zA-Z])', r'\1 \2', text)
+        
+        # Fix common concatenations in technical text
+        # Add space after punctuation if missing
+        text = re.sub(r'([.!?])([A-Z])', r'\1 \2', text)
+        text = re.sub(r'([,;:])([A-Za-z])', r'\1 \2', text)
+        
+        # Fix specific patterns seen in Sherlock PDFs
+        # Common word boundaries that get concatenated
+        patterns_to_fix = [
+            (r'function([A-Z])', r'function \1'),
+            (r'contract([A-Z])', r'contract \1'),
+            (r'address([A-Z])', r'address \1'),
+            (r'uint256([A-Z])', r'uint256 \1'),
+            (r'memory([A-Z])', r'memory \1'),
+            (r'storage([A-Z])', r'storage \1'),
+            (r'returns([A-Z])', r'returns \1'),
+            (r'require([A-Z])', r'require \1'),
+            (r'revert([A-Z])', r'revert \1'),
+            (r'modifier([A-Z])', r'modifier \1'),
+            (r'mapping([A-Z])', r'mapping \1'),
+            (r'event([A-Z])', r'event \1'),
+            (r'struct([A-Z])', r'struct \1'),
+            (r'interface([A-Z])', r'interface \1'),
+            (r'library([A-Z])', r'library \1'),
+        ]
+        
+        for pattern, replacement in patterns_to_fix:
+            text = re.sub(pattern, replacement, text)
+        
+        # Fix multiple spaces (clean up after additions)
+        text = re.sub(r' +', ' ', text)
+        
+        # Fix spacing around brackets and parentheses in code
+        text = re.sub(r'(\w)\(', r'\1 (', text)
+        text = re.sub(r'\)(\w)', r') \1', text)
+        
+        return text
+    
+    def _extract_finding_description_from_text(self, text: str, title: str) -> str:
+        """Extract description text that follows a finding title in the PDF"""
+        try:
+            # Find the position of the title in the text
+            title_pos = text.find(title)
+            if title_pos == -1:
+                return ""
+            
+            # Get text after the title
+            after_title = text[title_pos + len(title):title_pos + len(title) + 2000]  # Get next 2000 chars
+            
+            # Split into lines
+            lines = after_title.split('\n')
+            
+            description_lines = []
+            for line in lines[1:10]:  # Look at next 10 lines after title
+                line = line.strip()
+                
+                # Stop if we hit another finding or section header
+                if any(marker in line for marker in ['H-', 'M-', 'L-', 'High Risk', 'Medium Risk', 'Low Risk', 'Finding', 'Issue #']):
+                    break
+                
+                # Skip empty lines and very short lines
+                if len(line) > 10:
+                    # Skip lines that look like headers or metadata
+                    if not any(skip in line.lower() for skip in ['severity:', 'impact:', 'likelihood:', 'submitted by', 'status:']):
+                        description_lines.append(line)
+                        
+                        # Stop after getting a reasonable description
+                        if len(' '.join(description_lines)) > 100:
+                            break
+            
+            description = ' '.join(description_lines)[:500]  # Limit to 500 chars
+            
+            # Clean up the description
+            description = re.sub(r'\s+', ' ', description)  # Normalize whitespace
+            description = description.strip()
+            
+            return description
+            
+        except Exception as e:
+            self.logger.debug(f"Error extracting description: {e}")
+            return ""
     
     def _extract_github_from_text(self, text: str) -> Optional[tuple]:
         github_pattern = r'https://github\.com/[^\s]+'

@@ -380,20 +380,58 @@ class CantinaScraper(BaseScraper):
     def _extract_finding_description(self, heading_element) -> str:
         """Extract description text after a finding heading"""
         description_parts = []
-        current = heading_element.find_next_sibling()
-        max_elements = 3  # Look at next few elements
         
-        while current and max_elements > 0:
-            if current.name in ['h2', 'h3', 'h4']:  # Stop at next heading
-                break
-            
-            text = current.get_text(strip=True)
-            if text and len(text) > 20:  # Meaningful text
-                description_parts.append(text[:500])  # Limit length
-                break  # Usually first paragraph is enough
-            
-            current = current.find_next_sibling()
-            max_elements -= 1
+        # Find the parent section that contains this finding
+        parent_section = heading_element.find_parent('section')
+        if not parent_section:
+            return ""
+        
+        # Look for markdown-body div which contains the description
+        markdown_body = parent_section.find('div', class_=re.compile('markdown-body'))
+        if markdown_body:
+            # Get first meaningful paragraph after the Description heading
+            desc_h2 = markdown_body.find('h2', string=re.compile('Description', re.IGNORECASE))
+            if desc_h2:
+                # Collect text from all paragraphs until next heading
+                current = desc_h2.find_next_sibling()
+                p_count = 0
+                while current and p_count < 3:  # Limit to first 3 paragraphs
+                    if current.name == 'p':
+                        text = current.get_text(strip=True)
+                        if text and len(text) > 10:
+                            description_parts.append(text[:500])
+                            p_count += 1
+                    elif current.name in ['h2', 'h3', 'h4']:
+                        break  # Stop at next heading
+                    elif current.name == 'span' and 'katex' in current.get('class', []):
+                        # Skip math formulas
+                        pass
+                    current = current.find_next_sibling()
+                
+                # If no paragraphs found, try to get all text content after Description
+                if not description_parts:
+                    # Get parent element and extract text
+                    desc_parent = desc_h2.parent
+                    if desc_parent:
+                        # Find all p tags after the h2
+                        all_p = desc_parent.find_all('p')
+                        for p in all_p:
+                            text = p.get_text(strip=True)
+                            if text and len(text) > 10:
+                                description_parts.append(text[:500])
+                                if len(description_parts) >= 2:
+                                    break
+        
+        # If still no description, fallback to simpler extraction
+        if not description_parts:
+            # Just get any p tags in the parent section
+            all_p = parent_section.find_all('p', limit=5)
+            for p in all_p:
+                text = p.get_text(strip=True)
+                # Skip metadata-like text
+                if text and len(text) > 20 and not any(x in text for x in ['State', 'Severity', 'Submitted by', 'Likelihood', 'Impact']):
+                    description_parts.append(text[:500])
+                    break
         
         return ' '.join(description_parts)[:1000]  # Limit total description length
     

@@ -1,5 +1,5 @@
-# ai-auditor-eval
-A framework for evaluating AI audit agents using recent real-world data
+# SCABench
+A framework for evaluating AI code analysis contract audit agents using recent real-world data.
 
 ## Components
 

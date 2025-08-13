@@ -84,6 +84,31 @@ class TestCode4renaScraper(unittest.TestCase):
         self.assertEqual(report['platform'], 'code4rena')
         self.assertIn('project_id', report)
         self.assertIn('report_url', report)
+    
+    def test_vulnerability_descriptions(self):
+        """Test that vulnerability descriptions are properly extracted"""
+        report = self.scraper.fetch_report(self.test_contest_id)
+        
+        self.assertIsNotNone(report)
+        vulns = report.get('vulnerabilities', [])
+        
+        # Check that vulnerabilities have descriptions
+        has_descriptions = False
+        for vuln in vulns:
+            self.assertIn('description', vuln, "Vulnerability should have description field")
+            if vuln['description'] and len(vuln['description']) > 10:
+                has_descriptions = True
+        
+        self.assertTrue(has_descriptions, "At least some vulnerabilities should have non-empty descriptions")
+        
+        # Check that descriptions contain expected content (e.g., code snippets, explanations)
+        high_vulns = [v for v in vulns if v['severity'] == 'high']
+        if high_vulns:
+            # First high severity should have substantial description
+            first_high = high_vulns[0]
+            desc = first_high.get('description', '')
+            self.assertGreater(len(desc), 100, 
+                              f"High severity vulnerability should have detailed description, got: {len(desc)} chars")
 
 
 class TestCantinaScraper(unittest.TestCase):

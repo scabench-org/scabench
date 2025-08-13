@@ -247,80 +247,122 @@ class Code4renaScraper(BaseScraper):
         """Extract vulnerability findings from the report"""
         vulnerabilities = []
         
-        # First try to find vulnerabilities from the typical list structure
-        for severity_level in ['high', 'medium', 'low']:
-            # Find headers that indicate vulnerability sections
-            headers = soup.find_all(['h2', 'h3'], string=re.compile(f'{severity_level}\s+risk', re.IGNORECASE))
+        # Build a map of vulnerability IDs to their full content sections
+        vuln_content_map = {}
+        
+        # Find all headers with vulnerability IDs like [H-01], [M-01], [L-01]
+        for header in soup.find_all(['h2', 'h3', 'h4']):
+            header_text = header.get_text(strip=True)
             
-            for header in headers:
-                # Find vulnerability items after this header
-                current = header.find_next_sibling()
-                vuln_index = 1
+            # Match patterns like [H-01], [M-01], [L-01] in the header
+            match = re.search(r'\[([HML])-(\d+)\]', header_text)
+            if match:
+                severity_letter = match.group(1)
+                finding_num = match.group(2)
+                finding_key = f"{severity_letter}-{finding_num.zfill(2)}"
                 
-                while current and current.name not in ['h1', 'h2']:
-                    if current.name == 'ul':
-                        # Process list items as vulnerabilities
-                        for li in current.find_all('li'):
-                            link = li.find('a')
-                            if link:
-                                title = link.get_text(strip=True)
-                                # Clean up title - remove numbering like [H-01]
-                                title = re.sub(r'^\[[HML]-\d+\]\s*', '', title)
-                                
-                                finding_id = f"{contest_id}_{severity_level[0].upper()}-{vuln_index:02d}"
-                                
-                                vuln = Vulnerability(
-                                    finding_id=finding_id,
-                                    severity=severity_level,
-                                    title=title,
-                                    description=""
-                                )
-                                vulnerabilities.append(vuln)
-                                vuln_index += 1
+                # Extract title - remove the ID prefix
+                title = re.sub(r'^\[[HML]-\d+\]\s*', '', header_text).strip()
+                
+                # Extract the content following this header until the next similar header
+                content_parts = []
+                current = header.find_next_sibling()
+                
+                while current:
+                    # Stop if we hit another vulnerability header
+                    if current.name in ['h1', 'h2', 'h3', 'h4']:
+                        current_text = current.get_text(strip=True)
+                        if re.search(r'\[([HML])-\d+\]', current_text):
+                            break
+                    
+                    # Collect text content
+                    if current.name in ['p', 'pre', 'ul', 'ol', 'blockquote']:
+                        text = current.get_text(separator='\n', strip=True)
+                        if text:
+                            content_parts.append(text)
                     
                     current = current.find_next_sibling()
+                
+                # Join the content parts
+                description = '\n\n'.join(content_parts)
+                
+                # Map severity letter to full severity name
+                severity_map = {'H': 'high', 'M': 'medium', 'L': 'low'}
+                severity = severity_map.get(severity_letter, 'medium')
+                
+                vuln_content_map[finding_key] = {
+                    'title': title,
+                    'description': description,
+                    'severity': severity
+                }
         
-        # If no vulnerabilities found with the above method, try pattern matching
-        if not vulnerabilities:
-            text = soup.get_text()
-            
-            # Look for patterns like [H-01], [M-01], [L-01] etc.
-            patterns = {
-                'high': r'\[H-(\d+)\]([^\[\]]+?)(?=\[|$)',
-                'medium': r'\[M-(\d+)\]([^\[\]]+?)(?=\[|$)',
-                'low': r'\[L-(\d+)\]([^\[\]]+?)(?=\[|$)'
-            }
-            
-            # Use a set to track which finding IDs we've already processed
-            seen_findings = set()
-            
-            for severity, pattern in patterns.items():
-                matches = re.finditer(pattern, text, re.MULTILINE | re.DOTALL)
-                for match in matches:
-                    finding_num = match.group(1)
-                    title = match.group(2).strip()
+        # If we found vulnerabilities with content, use them
+        if vuln_content_map:
+            for finding_key, content in vuln_content_map.items():
+                finding_id = f"{contest_id}_{finding_key}"
+                
+                vuln = Vulnerability(
+                    finding_id=finding_id,
+                    severity=content['severity'],
+                    title=content['title'],
+                    description=content['description']
+                )
+                vulnerabilities.append(vuln)
+        else:
+            # Fallback to the original method for extracting just titles
+            for severity_level in ['high', 'medium', 'low']:
+                headers = soup.find_all(['h2', 'h3'], string=re.compile(f'{severity_level}\s+risk', re.IGNORECASE))
+                
+                for header in headers:
+                    current = header.find_next_sibling()
+                    vuln_index = 1
                     
-                    # Create a unique key for this finding
-                    finding_key = f"{severity[0].upper()}-{finding_num.zfill(2)}"
-                    
-                    # Skip if we've already seen this finding ID
-                    if finding_key in seen_findings:
-                        continue
-                    
-                    seen_findings.add(finding_key)
-                    
-                    # Clean up title - remove extra whitespace and limit length
-                    title = ' '.join(title.split())[:200]
-                    
-                    finding_id = f"{contest_id}_{finding_key}"
-                    
-                    vuln = Vulnerability(
-                        finding_id=finding_id,
-                        severity=severity,
-                        title=title,
-                        description=""
-                    )
-                    vulnerabilities.append(vuln)
+                    while current and current.name not in ['h1', 'h2']:
+                        if current.name == 'ul':
+                            for li in current.find_all('li'):
+                                link = li.find('a')
+                                if link:
+                                    title = link.get_text(strip=True)
+                                    title = re.sub(r'^\[[HML]-\d+\]\s*', '', title)
+                                    
+                                    finding_id = f"{contest_id}_{severity_level[0].upper()}-{vuln_index:02d}"
+                                    
+                                    # Try to find the corresponding section for description
+                                    href = link.get('href', '')
+                                    description = ""
+                                    if href and href.startswith('#'):
+                                        # Find the section with this ID
+                                        section_id = href[1:]  # Remove the #
+                                        section = soup.find(id=section_id)
+                                        if section:
+                                            # Extract content after this section
+                                            content_parts = []
+                                            current_desc = section.find_next_sibling()
+                                            
+                                            while current_desc:
+                                                if current_desc.name in ['h1', 'h2', 'h3', 'h4']:
+                                                    if re.search(r'\[([HML])-\d+\]', current_desc.get_text(strip=True)):
+                                                        break
+                                                
+                                                if current_desc.name in ['p', 'pre', 'ul', 'ol', 'blockquote']:
+                                                    text = current_desc.get_text(separator='\n', strip=True)
+                                                    if text:
+                                                        content_parts.append(text)
+                                                
+                                                current_desc = current_desc.find_next_sibling()
+                                            
+                                            description = '\n\n'.join(content_parts)
+                                    
+                                    vuln = Vulnerability(
+                                        finding_id=finding_id,
+                                        severity=severity_level,
+                                        title=title,
+                                        description=description
+                                    )
+                                    vulnerabilities.append(vuln)
+                                    vuln_index += 1
+                        
+                        current = current.find_next_sibling()
         
         self.logger.info(f"Extracted {len(vulnerabilities)} vulnerabilities from Code4rena report")
         

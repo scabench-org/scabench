@@ -1,6 +1,7 @@
 .DS_Store
 .python-version
 specs
+issues
 datasets
 __pycache__
 .pytest_cache

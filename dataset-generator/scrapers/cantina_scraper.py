@@ -42,19 +42,46 @@ class CantinaScraper(BaseScraper):
             
             # Extract portfolio links - they are UUIDs
             # Pattern: /portfolio/[uuid]
-            links = soup.find_all('a', href=re.compile(r'/portfolio/[a-f0-9-]+$'))
+            # The <a> tags with class "chakra-card" ARE the cards themselves
+            cards = soup.find_all('a', class_=re.compile('chakra-card'))
             
-            for link in links:
-                href = link.get('href', '')
+            for card in cards:
+                href = card.get('href', '')
                 if '/portfolio/' in href:
                     contest_id = href.split('/')[-1]
                     
-                    # Try to extract project name from link text or nearby elements
-                    project_name = link.get_text(strip=True) or contest_id
+                    project_name = contest_id  # Default
+                    contest_date = None
                     
-                    # For test mode, we'll use a sample date
-                    # In production, would need to fetch the actual report to get the date
-                    contest_date = datetime(2025, 7, 25)  # Sample date from test data
+                    # Look for project name in the card
+                    name_elem = card.find('p', class_=re.compile('css-a6v8hi'))
+                    if name_elem:
+                        project_name = name_elem.get_text(strip=True)
+                    
+                    # Look for date range in the card - format: "DD Month YYYY - DD Month YYYY"
+                    date_elems = card.find_all('span', class_=re.compile('css-ulwnsq'))
+                    for date_elem in date_elems:
+                        date_text = date_elem.get_text(strip=True)
+                        # Extract start date from range like "25 July 2025 - 30 July 2025"
+                        date_match = re.match(r'(\d{1,2})\s+(\w+)\s+(\d{4})', date_text)
+                        if date_match:
+                            day, month_name, year = date_match.groups()
+                            try:
+                                month_map = {
+                                    'January': 1, 'February': 2, 'March': 3, 'April': 4,
+                                    'May': 5, 'June': 6, 'July': 7, 'August': 8,
+                                    'September': 9, 'October': 10, 'November': 11, 'December': 12
+                                }
+                                month = month_map.get(month_name, 1)
+                                contest_date = datetime(int(year), month, int(day))
+                                break
+                            except:
+                                pass
+                    
+                    # If we couldn't extract date from card, use current date as fallback
+                    if not contest_date:
+                        contest_date = datetime.now()
+                        self.logger.warning(f"Could not extract date for contest {contest_id}, using current date")
                     
                     if period_start <= contest_date <= period_end:
                         contests.append({

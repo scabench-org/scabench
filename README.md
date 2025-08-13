@@ -1,6 +1,9 @@
 # SCABench
 A framework for evaluating AI code analysis contract audit agents using recent real-world data.
 
+- Easily compile fresh eval datasets (codebase -> vulnerabilities) from multiple sources
+- Automatically judge tool results
+
 ## Components
 
 ### Dataset Generator

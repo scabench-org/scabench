@@ -12,7 +12,7 @@ fi
 # Configuration
 DATASET="../datasets/scabench_2025-02_to_2025-08.json"
 OUTPUT_DIR="batch_test_output"
-MAX_FILES=10  # Analyze up to 10 files per project
+MAX_FILES=100  # Analyze up to 100 files per project
 
 # Projects to test (add more as needed)
 PROJECTS=(

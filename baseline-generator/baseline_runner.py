@@ -100,7 +100,8 @@ class RepoDownloader:
             raise ValueError(f"Invalid GitHub URL: {repo_url}")
         
         owner, repo = match.groups()
-        repo = repo.rstrip('.git')
+        if repo.endswith('.git'):
+            repo = repo[:-4]
         
         # Use commit or default branch
         ref = commit or 'main'

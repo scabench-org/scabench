@@ -1,9 +1,9 @@
 # SCABench
-A framework for evaluating AI code analysis contract audit agents using recent real-world data.
+A framework for evaluating AI code analysis contract audit agents using recent real-world data. Provides an easy way to generate new evals once SOTA models have memorized public audit data.
 
-- Easily compile fresh eval datasets (codebase -> vulnerabilities) from multiple sources
+- Compile fresh eval datasets (codebase -> vulnerabilities) from multiple sources
 - Run baseline LLM analysis to establish performance benchmarks
-- Automatically evaluate and compare results
+- Automatically evaluate and compare results (WIP)
 
 ## Components
 

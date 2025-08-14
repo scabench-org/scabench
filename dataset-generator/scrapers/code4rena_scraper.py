@@ -171,6 +171,7 @@ class Code4renaScraper(BaseScraper):
     def _extract_contests_from_script(self, script_text: str, period_start: datetime, period_end: datetime) -> List[Dict[str, Any]]:
         """Extract contest data from JavaScript embedded in HTML"""
         contests = []
+        seen_slugs = set()  # Track unique slugs to avoid duplicates
         
         # Pattern to find contest objects with escaped quotes in HTML
         # Looking for patterns like: {\"alt_url\":...,\"date\":\"2023-07-26\",\"slug\":\"2023-05-juicebox\"...}
@@ -180,6 +181,11 @@ class Code4renaScraper(BaseScraper):
         for match in matches:
             report_date_str = match.group(1)
             slug = match.group(2)
+            
+            # Skip if we've already seen this slug
+            if slug in seen_slugs:
+                continue
+            seen_slugs.add(slug)
             
             # Extract contest date from slug (e.g., "2023-05-juicebox" -> "2023-05")
             slug_date_match = re.match(r'(\d{4})-(\d{2})', slug)

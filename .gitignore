@@ -2,7 +2,7 @@
 .python-version
 specs
 issues
-datasets
+dataset-generator/datasets
 __pycache__
 .pytest_cache
 .claude

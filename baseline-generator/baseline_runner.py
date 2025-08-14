@@ -204,11 +204,13 @@ class SourceFileAnalyzer:
             
             for future, file_path in futures:
                 try:
-                    file_findings = future.result(timeout=60)
+                    file_findings = future.result(timeout=120)  # Increased timeout to 2 minutes
                     findings.extend(file_findings)
                     logger.info(f"Analyzed {file_path}: {len(file_findings)} findings")
                 except Exception as e:
                     logger.error(f"Failed to analyze {file_path}: {e}")
+                    import traceback
+                    logger.debug(f"Traceback: {traceback.format_exc()}")
         
         return findings
     
@@ -267,7 +269,9 @@ class SourceFileAnalyzer:
             return findings
             
         except Exception as e:
-            logger.error(f"Error analyzing file {file_path}: {e}")
+            logger.error(f"Error analyzing file {file_path}: {str(e)}")
+            import traceback
+            logger.debug(f"Traceback: {traceback.format_exc()}")
             return []
     
     def _call_llm(self, code: str, file_path: str, language: str) -> List[Finding]:
@@ -286,12 +290,16 @@ Code:
 For each vulnerability found, provide:
 1. Severity (high/medium/low/informational)
 2. A clear, concise title
-3. A brief description explaining the issue
+3. A brief description explaining the issue (1-2 sentences max, no proof of concept or extensive explanation)
 4. The approximate line numbers if possible
 5. Your confidence level (0.0 to 1.0)
 
-Only report issues you are confident about (confidence > 0.7).
-Focus on real security vulnerabilities, not code quality issues.
+IMPORTANT INSTRUCTIONS:
+- Only report issues you are HIGHLY confident about (confidence > 0.7)
+- Keep descriptions brief and concise (1-2 sentences)
+- NO false positives - only report definite vulnerabilities
+- Focus on real security vulnerabilities, not code quality issues
+- No proof of concept code or extensive explanations needed
 
 Respond in JSON format:
 {{
@@ -299,7 +307,7 @@ Respond in JSON format:
     {{
       "severity": "high|medium|low|informational",
       "title": "Clear vulnerability title",
-      "description": "Brief explanation",
+      "description": "Brief 1-2 sentence explanation",
       "line_start": 10,
       "line_end": 15,
       "confidence": 0.85
@@ -343,7 +351,9 @@ If no vulnerabilities are found, return an empty findings array."""
             return findings
             
         except Exception as e:
-            logger.error(f"LLM call failed for {file_path}: {e}")
+            logger.error(f"LLM call failed for {file_path}: {str(e)}")
+            import traceback
+            logger.debug(f"Traceback: {traceback.format_exc()}")
             return []
 
 

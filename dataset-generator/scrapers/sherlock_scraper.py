@@ -212,31 +212,44 @@ class SherlockScraper(BaseScraper):
             return None
     
     def _extract_project_name(self, text: str) -> Optional[str]:
-        # Look for "MetaLend" or similar project names in the first part of the PDF
+        # Look for project name in the first part of the PDF
         lines = text.split('\n')
         
-        # Try to find the project name in various patterns
+        # Sherlock PDFs typically have structure like:
+        # "Security Review For"
+        # "ProjectName"
+        # "Collaborative Audit Prepared For: ProjectName"
+        
         for i, line in enumerate(lines[:50]):
-            # Look for lines that contain "Audit Report" or "Security Audit"
-            if 'Audit Report' in line or 'Security Audit' in line:
-                # The project name is usually before these terms
-                if i > 0:
-                    potential_name = lines[i-1].strip()
-                    if potential_name and len(potential_name) > 2 and len(potential_name) < 50:
-                        return potential_name
-                    
-                # Or it might be in the same line
-                name_match = re.search(r'^([\w\s]+?)\s*(?:Audit|Security)', line)
-                if name_match:
-                    return name_match.group(1).strip()
+            # Skip empty lines and PDF metadata
+            if not line.strip() or 'def' in line or 'pdfmark' in line:
+                continue
+                
+            # Look for "Security Review For" - the next non-empty line is usually the project name
+            if 'Security Review For' in line and i < len(lines) - 1:
+                # Get the next non-empty line
+                for j in range(i + 1, min(i + 10, len(lines))):
+                    next_line = lines[j].strip()
+                    if next_line and 'Collaborative Audit' not in next_line:
+                        # This should be the project name
+                        return next_line
             
-            # Look for standalone project names (often in larger font, appearing alone)
-            if line.strip() and len(line.strip()) > 3 and len(line.strip()) < 30:
-                # Avoid dates and common headers
-                if not re.match(r'^\d{4}', line) and 'Table of Contents' not in line:
-                    if not any(skip in line.lower() for skip in ['summary', 'introduction', 'scope', 'findings']):
-                        # This might be the project name
-                        return line.strip()
+            # Alternative pattern: "Prepared For: ProjectName"
+            if 'Prepared For:' in line:
+                match = re.search(r'Prepared For:\s*(.+)', line)
+                if match:
+                    return match.group(1).strip()
+            
+            # Alternative pattern: Look for line after "Final -" in filename context
+            if 'Audit Report' in line or 'Security Audit' in line:
+                # Extract from the line itself
+                # Pattern like "ProjectName Audit Report" or "ProjectName Security Audit"
+                name_match = re.search(r'^(.+?)\s*(?:Collaborative\s+)?(?:Audit|Security)', line)
+                if name_match:
+                    name = name_match.group(1).strip()
+                    # Avoid generic terms
+                    if name and name not in ['Security Review For', 'Final', 'Draft']:
+                        return name
         
         return None
     

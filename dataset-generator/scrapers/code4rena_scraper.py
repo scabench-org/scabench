@@ -340,23 +340,47 @@ class Code4renaScraper(BaseScraper):
                         'severity': 'low'  # Will be low if these are the only issues
                     }
         
-        # If we found NO H/M/L vulnerabilities but we have numbered issues,
-        # treat the numbered issues as the main vulnerabilities (like in Upside contest)
-        if not vuln_content_map and numbered_issues:
-            # Check if this looks like a contest with only low-risk issues
-            # by looking for "Low Risk and Non-Critical Issues" header
-            low_risk_header = None
-            for header in soup.find_all(['h1', 'h2']):
-                header_text = header.get_text(strip=True)
-                if 'Low Risk and Non-Critical Issues' in header_text:
-                    low_risk_header = header
-                    break
+        # Handle numbered issues (non-critical/low severity)
+        if numbered_issues:
+            # Check if this is a report with ONLY numbered issues (like Upside)
+            # or if it has both H/M/L and numbered issues (like Blackhole)
             
-            if low_risk_header:
-                # These numbered issues are the main vulnerabilities
-                for key, issue in numbered_issues.items():
-                    # Rename key from NC-XX to L-XX
-                    new_key = key.replace('NC-', 'L-')
+            if not vuln_content_map:
+                # No H/M/L issues found, so numbered issues are the main vulnerabilities
+                # Check if this looks like a contest with only low-risk issues
+                low_risk_header = None
+                for header in soup.find_all(['h1', 'h2']):
+                    header_text = header.get_text(strip=True)
+                    if 'Low Risk and Non-Critical Issues' in header_text:
+                        low_risk_header = header
+                        break
+                
+                if low_risk_header:
+                    # These numbered issues are the main vulnerabilities
+                    for key, issue in numbered_issues.items():
+                        # Rename key from NC-XX to L-XX
+                        new_key = key.replace('NC-', 'L-')
+                        vuln_content_map[new_key] = issue
+            else:
+                # We have both H/M/L issues AND numbered issues
+                # Add numbered issues as additional low-severity findings
+                # This handles cases like Blackhole where there are both types
+                
+                # Find the highest existing low-severity number
+                existing_low_nums = []
+                for existing_key in vuln_content_map.keys():
+                    if existing_key.startswith('L-'):
+                        try:
+                            num = int(existing_key.split('-')[1])
+                            existing_low_nums.append(num)
+                        except:
+                            pass
+                
+                start_num = max(existing_low_nums) + 1 if existing_low_nums else 1
+                
+                # Add the numbered issues as additional low-severity findings
+                for i, (key, issue) in enumerate(numbered_issues.items(), start=start_num):
+                    new_key = f"L-{i:02d}"
                     vuln_content_map[new_key] = issue
         
         # If we found vulnerabilities with content, use them

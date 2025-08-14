@@ -252,7 +252,7 @@ class SourceFileAnalyzer:
                     content = f.read()
                 
                 # Skip very large files
-                if len(content) > 10000:  # Smaller limit for batch processing
+                if len(content) > 50000:  # 50KB limit for batch processing
                     logger.warning(f"Skipping large file in batch: {file_path}")
                     continue
                 
@@ -432,7 +432,7 @@ If no vulnerabilities are found, return an empty findings array."""
                 content = f.read()
             
             # Skip very large files
-            if len(content) > 100000:
+            if len(content) > 100000:  # 100KB limit for individual analysis
                 logger.warning(f"Skipping large file: {file_path}")
                 return []
             

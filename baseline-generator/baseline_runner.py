@@ -21,9 +21,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 
-# Add parent directory to path to import dataset models
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from dataset_generator.models import Dataset, Project, Vulnerability
+from models import Dataset, Project, Vulnerability
 from session_manager import SessionManager
 
 # Configure logging
@@ -411,8 +409,9 @@ class BaselineRunner:
             dataset_dict = json.load(f)
             self.dataset = Dataset(
                 dataset_id=dataset_dict['dataset_id'],
-                description=dataset_dict.get('description', ''),
-                created_at=dataset_dict.get('created_at', datetime.now().isoformat())
+                period_start=dataset_dict.get('period_start', ''),
+                period_end=dataset_dict.get('period_end', ''),
+                schema_version=dataset_dict.get('schema_version', '1.0.0')
             )
             # Reconstruct projects
             for project_data in dataset_dict.get('projects', []):

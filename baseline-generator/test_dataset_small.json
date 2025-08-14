@@ -1,0 +1,41 @@
+{
+  "dataset_id": "test_session_demo",
+  "period_start": "2025-08-01",
+  "period_end": "2025-08-14",
+  "schema_version": "1.0.0",
+  "projects": [
+    {
+      "project_id": "openzeppelin_test",
+      "name": "OpenZeppelin Contracts Test",
+      "platform": "test",
+      "codebases": [
+        {
+          "codebase_id": "oz_v4.9.0",
+          "repo_url": "https://github.com/OpenZeppelin/openzeppelin-contracts",
+          "commit": "v4.9.0"
+        }
+      ],
+      "vulnerabilities": [
+        {
+          "finding_id": "test_1",
+          "severity": "high",
+          "title": "Test vulnerability for comparison",
+          "description": "This is a test vulnerability to compare with baseline findings"
+        }
+      ]
+    },
+    {
+      "project_id": "uniswap_test",
+      "name": "Uniswap V3 Core Test",
+      "platform": "test",
+      "codebases": [
+        {
+          "codebase_id": "uni_v3",
+          "repo_url": "https://github.com/Uniswap/v3-core",
+          "commit": "main"
+        }
+      ],
+      "vulnerabilities": []
+    }
+  ]
+}

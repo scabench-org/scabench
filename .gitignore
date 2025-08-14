@@ -6,3 +6,15 @@ dataset-generator/datasets
 __pycache__
 .pytest_cache
 .claude
+
+# Baseline generator outputs
+baseline-generator/test_session_output/
+baseline-generator/real_test_output/
+baseline-generator/batch_test_output/
+baseline-generator/full_test_output/
+baseline-generator/baseline_results*/
+baseline-generator/.baseline_cache/
+baseline-generator/test_output/
+baseline-generator/comparison_metrics.json
+baseline-generator/test_dataset_small.json
+baseline-generator/models.py

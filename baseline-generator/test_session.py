@@ -30,7 +30,7 @@ def test_session_manager():
     session_mgr.start_session(
         dataset_path="test_dataset.json",
         output_dir="test_output",
-        model="gpt-4o",
+        model="gpt-5",
         total_projects=5
     )
     print(f"   Session ID: {session_mgr.state['session_id']}")

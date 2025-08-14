@@ -174,7 +174,7 @@ class SourceFileAnalyzer:
         'vyper': ['.vy'],
     }
     
-    def __init__(self, model: str = "gpt-4o", api_key: str = None):
+    def __init__(self, model: str = "gpt-5", api_key: str = None):
         self.model = model
         self.api_key = api_key or os.getenv('OPENAI_API_KEY')
         if not self.api_key:
@@ -316,7 +316,6 @@ If no vulnerabilities are found, return an empty findings array."""
                     {"role": "system", "content": "You are a security auditor specializing in smart contract and blockchain security."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,
                 response_format={"type": "json_object"}
             )
             
@@ -386,7 +385,7 @@ class VulnerabilityDeduplicator:
 class BaselineRunner:
     """Main runner for baseline generation"""
     
-    def __init__(self, dataset_path: str, output_dir: str, model: str = "gpt-4o", 
+    def __init__(self, dataset_path: str, output_dir: str, model: str = "gpt-5", 
                  cache_dir: str = None, max_files_per_project: int = None,
                  session_dir: str = None, resume: bool = True):
         self.dataset_path = Path(dataset_path)
@@ -588,8 +587,8 @@ def main():
     
     parser.add_argument(
         '--model',
-        default='gpt-4o',
-        help='OpenAI model to use (default: gpt-4o)'
+        default='gpt-5',
+        help='OpenAI model to use (default: gpt-5)'
     )
     
     parser.add_argument(

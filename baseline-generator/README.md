@@ -6,7 +6,7 @@ A baseline security analysis tool that uses LLMs to analyze source code reposito
 
 - **Automatic Repository Download**: Downloads and caches repositories from GitHub and other sources
 - **Multi-Language Support**: Analyzes Solidity, Rust, Go, JavaScript, Python, Cairo, Move, and Vyper code
-- **LLM-Based Analysis**: Uses OpenAI's GPT-5 model to identify security vulnerabilities
+- **LLM-Based Analysis**: Uses trivial LLM prompting to identify security vulnerabilities
 - **Deduplication**: Automatically deduplicates similar findings
 - **Session Management**: Resume interrupted runs automatically
 - **Evaluation System**: Compare findings against expected vulnerabilities
@@ -45,7 +45,7 @@ python baseline_runner.py path/to/dataset.json
 ```bash
 python baseline_runner.py dataset.json \
   --output-dir results \
-  --model gpt-5 \
+  --model gpt-5-mini \
   --cache-dir ~/.repo_cache \
   --max-files 50 \
   --project "project_name" \
@@ -75,7 +75,7 @@ Each project analysis generates a JSON file with the following structure:
   "project_name": "Project Name",
   "platform": "code4rena",
   "analysis_date": "2024-01-01T00:00:00",
-  "model": "gpt-5",
+  "model": "gpt-5-mini",
   "findings_count": 10,
   "findings": [
     {

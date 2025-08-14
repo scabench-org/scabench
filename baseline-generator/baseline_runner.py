@@ -174,7 +174,7 @@ class SourceFileAnalyzer:
         'vyper': ['.vy'],
     }
     
-    def __init__(self, model: str = "gpt-5", api_key: str = None):
+    def __init__(self, model: str = "gpt-5-mini", api_key: str = None):
         self.model = model
         self.api_key = api_key or os.getenv('OPENAI_API_KEY')
         if not self.api_key:
@@ -204,13 +204,11 @@ class SourceFileAnalyzer:
             
             for future, file_path in futures:
                 try:
-                    file_findings = future.result(timeout=120)  # Increased timeout to 2 minutes
+                    file_findings = future.result(timeout=60)
                     findings.extend(file_findings)
                     logger.info(f"Analyzed {file_path}: {len(file_findings)} findings")
                 except Exception as e:
                     logger.error(f"Failed to analyze {file_path}: {e}")
-                    import traceback
-                    logger.debug(f"Traceback: {traceback.format_exc()}")
         
         return findings
     
@@ -269,9 +267,7 @@ class SourceFileAnalyzer:
             return findings
             
         except Exception as e:
-            logger.error(f"Error analyzing file {file_path}: {str(e)}")
-            import traceback
-            logger.debug(f"Traceback: {traceback.format_exc()}")
+            logger.error(f"Error analyzing file {file_path}: {e}")
             return []
     
     def _call_llm(self, code: str, file_path: str, language: str) -> List[Finding]:
@@ -290,16 +286,12 @@ Code:
 For each vulnerability found, provide:
 1. Severity (high/medium/low/informational)
 2. A clear, concise title
-3. A brief description explaining the issue (1-2 sentences max, no proof of concept or extensive explanation)
+3. A brief description explaining the issue
 4. The approximate line numbers if possible
 5. Your confidence level (0.0 to 1.0)
 
-IMPORTANT INSTRUCTIONS:
-- Only report issues you are HIGHLY confident about (confidence > 0.7)
-- Keep descriptions brief and concise (1-2 sentences)
-- NO false positives - only report definite vulnerabilities
-- Focus on real security vulnerabilities, not code quality issues
-- No proof of concept code or extensive explanations needed
+Only report issues you are confident about (confidence > 0.7).
+Focus on real security vulnerabilities, not code quality issues.
 
 Respond in JSON format:
 {{
@@ -307,7 +299,7 @@ Respond in JSON format:
     {{
       "severity": "high|medium|low|informational",
       "title": "Clear vulnerability title",
-      "description": "Brief 1-2 sentence explanation",
+      "description": "Brief explanation",
       "line_start": 10,
       "line_end": 15,
       "confidence": 0.85
@@ -330,22 +322,11 @@ If no vulnerabilities are found, return an empty findings array."""
             # Parse response
             result = json.loads(response.choices[0].message.content)
             
-            # Debug logging
-            logger.debug(f"LLM response for {file_path}:")
-            logger.debug(f"Raw findings: {json.dumps(result, indent=2)}")
-            
             # Convert to Finding objects
             findings = []
-            total_raw_findings = len(result.get('findings', []))
-            filtered_count = 0
-            
             for finding_data in result.get('findings', []):
-                confidence = finding_data.get('confidence', 0)
-                
-                # Log what's being filtered
-                if confidence < 0.7:
-                    filtered_count += 1
-                    logger.debug(f"Filtered out finding due to low confidence ({confidence}): {finding_data.get('title', 'Unknown')}")
+                # Only include high-confidence findings
+                if finding_data.get('confidence', 0) < 0.7:
                     continue
                 
                 finding = Finding(
@@ -358,8 +339,6 @@ If no vulnerabilities are found, return an empty findings array."""
                     confidence=finding_data.get('confidence', 0.7)
                 )
                 findings.append(finding)
-            
-            logger.info(f"File {file_path}: {total_raw_findings} raw findings, {filtered_count} filtered, {len(findings)} kept")
             
             return findings
             
@@ -408,7 +387,7 @@ class VulnerabilityDeduplicator:
 class BaselineRunner:
     """Main runner for baseline generation"""
     
-    def __init__(self, dataset_path: str, output_dir: str, model: str = "gpt-5", 
+    def __init__(self, dataset_path: str, output_dir: str, model: str = "gpt-5-mini", 
                  cache_dir: str = None, max_files_per_project: int = None,
                  session_dir: str = None, resume: bool = True):
         self.dataset_path = Path(dataset_path)
@@ -610,8 +589,8 @@ def main():
     
     parser.add_argument(
         '--model',
-        default='gpt-5',
-        help='OpenAI model to use (default: gpt-5)'
+        default='gpt-5-mini',
+        help='OpenAI model to use (default: gpt-5-mini)'
     )
     
     parser.add_argument(

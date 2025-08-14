@@ -24,13 +24,7 @@ See the [dataset-generator README](./dataset-generator/README.md) for detailed u
 An LLM-based security analysis tool that establishes baseline performance metrics for vulnerability detection.
 
 - **Location**: [`/baseline-generator`](./baseline-generator)
-- **Purpose**: Analyzes codebases using trivial LLM prompting to find vulnerabilities and evaluates performance against expected findings
-- **Features**:
-  - Automatic repository downloading and caching
-  - Multi-language support (Solidity, Rust, Go, Python, etc.)
-  - Session management for resuming interrupted runs
-  - Comprehensive evaluation system with found/missed/false positive metrics
-  - Detailed debugging output for investigating results
+- **Purpose**: Analyzes codebases using trivial LLM prompting to create a baseline result for the dataset
 
 See the [baseline-generator README](./baseline-generator/README.md) for detailed usage instructions.
 

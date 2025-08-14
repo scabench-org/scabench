@@ -330,11 +330,22 @@ If no vulnerabilities are found, return an empty findings array."""
             # Parse response
             result = json.loads(response.choices[0].message.content)
             
+            # Debug logging
+            logger.debug(f"LLM response for {file_path}:")
+            logger.debug(f"Raw findings: {json.dumps(result, indent=2)}")
+            
             # Convert to Finding objects
             findings = []
+            total_raw_findings = len(result.get('findings', []))
+            filtered_count = 0
+            
             for finding_data in result.get('findings', []):
-                # Only include high-confidence findings
-                if finding_data.get('confidence', 0) < 0.7:
+                confidence = finding_data.get('confidence', 0)
+                
+                # Log what's being filtered
+                if confidence < 0.7:
+                    filtered_count += 1
+                    logger.debug(f"Filtered out finding due to low confidence ({confidence}): {finding_data.get('title', 'Unknown')}")
                     continue
                 
                 finding = Finding(
@@ -347,6 +358,8 @@ If no vulnerabilities are found, return an empty findings array."""
                     confidence=finding_data.get('confidence', 0.7)
                 )
                 findings.append(finding)
+            
+            logger.info(f"File {file_path}: {total_raw_findings} raw findings, {filtered_count} filtered, {len(findings)} kept")
             
             return findings
             

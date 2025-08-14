@@ -24,7 +24,7 @@ See the [dataset-generator README](./dataset-generator/README.md) for detailed u
 An LLM-based security analysis tool that establishes baseline performance metrics for vulnerability detection.
 
 - **Location**: [`/baseline-generator`](./baseline-generator)
-- **Purpose**: Analyzes codebases using GPT-4o to find vulnerabilities and evaluates performance against expected findings
+- **Purpose**: Analyzes codebases using GPT-5 to find vulnerabilities and evaluates performance against expected findings
 - **Features**:
   - Automatic repository downloading and caching
   - Multi-language support (Solidity, Rust, Go, Python, etc.)

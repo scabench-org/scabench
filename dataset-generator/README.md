@@ -1,14 +1,42 @@
-# Security Audit Contest Scraper
+# ScaBench Dataset Generator
 
-A comprehensive Python scraper system for extracting security audit data from multiple platforms including Code4rena, Cantina, and Sherlock. The system extracts vulnerability findings, GitHub repository information, and project metadata to create structured datasets for security research.
+A comprehensive system for generating and curating security audit datasets from multiple platforms. This toolkit consists of two main components:
+
+1. **Scraper**: Extracts security audit data from platforms like Code4rena, Cantina, and Sherlock
+2. **Curator**: Filters and enriches the scraped data based on configurable quality criteria
+
+The system extracts vulnerability findings, GitHub repository information, and project metadata to create structured datasets for security research.
 
 ## Installation
 
 ```bash
 pip install -r requirements.txt
+
+# For code analysis features (optional)
+brew install cloc  # macOS
+apt-get install cloc  # Ubuntu/Debian
 ```
 
-## Usage
+## Workflow Overview
+
+The typical workflow for generating a curated dataset:
+
+1. **Scrape**: Use `scraper.py` to collect audit data from various platforms
+2. **Curate**: Use `curate_dataset.py` to filter and enrich the scraped data
+
+```bash
+# Step 1: Scrape data from platforms (last 6 months)
+python scraper.py --months 6 --output raw_dataset.json
+
+# Step 2: Curate the dataset (filter by quality criteria)
+python curate_dataset.py -i raw_dataset.json -o curated_dataset.json
+
+# With custom criteria
+python curate_dataset.py -i raw_dataset.json -o curated_dataset.json \
+    --min-vulnerabilities 10 --min-high-critical 2
+```
+
+## Component 1: Scraper
 
 ### Command Line
 
@@ -136,6 +164,64 @@ The scraper produces a JSON file with the following structure:
 | `--test-mode` | Run in test mode with local data | False |
 | `--test-data-dir` | Directory containing test data | `test/testdata` |
 | `--list-platforms` | List available platforms and exit | - |
+
+## Component 2: Curator
+
+The curator filters the scraped dataset based on quality criteria and enriches it with code metrics.
+
+### Features
+
+- **Repository Validation**: Checks if GitHub repositories exist (not 404)
+- **Vulnerability Filtering**: Filters projects by minimum vulnerability counts
+- **Code Analysis**: Adds lines of code statistics using `cloc` (when available)
+- **Report Generation**: Creates detailed markdown reports of the curation process
+
+### Command Line Options
+
+```bash
+python curate_dataset.py -i INPUT -o OUTPUT [OPTIONS]
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-i, --input` | Path to input JSON dataset file | Required |
+| `-o, --output` | Path to output curated JSON file | Required |
+| `-r, --report` | Path to output report file | `curation_report.md` |
+| `--min-vulnerabilities` | Minimum total vulnerabilities required | 5 |
+| `--min-high-critical` | Minimum high/critical vulnerabilities required | 1 |
+
+### Curation Criteria
+
+Projects are included in the curated dataset if they meet ALL of the following:
+
+1. **Repository Availability**: At least one GitHub repository that exists (not returning 404)
+2. **Vulnerability Count**: Minimum number of total vulnerabilities (configurable, default: 5)
+3. **Severity Threshold**: Minimum number of high or critical findings (configurable, default: 1)
+4. **Code Metrics**: CLOC statistics added when repository can be cloned (optional - failures don't exclude projects)
+
+### Example Usage
+
+```bash
+# Basic curation with defaults
+python curate_dataset.py -i datasets/raw_data.json -o datasets/curated.json
+
+# Strict criteria: require 10+ vulnerabilities with 3+ high/critical
+python curate_dataset.py -i raw.json -o strict.json \
+    --min-vulnerabilities 10 --min-high-critical 3
+
+# Custom report location
+python curate_dataset.py -i raw.json -o curated.json \
+    --report analysis/curation_report.md
+```
+
+### Output
+
+The curator produces:
+1. **Curated JSON dataset**: Filtered subset of input data
+2. **Markdown report**: Detailed statistics and project listings including:
+   - Summary statistics (retention rate, total LoC, vulnerability counts)
+   - Per-project details (repositories, vulnerability breakdown, code metrics)
+   - Language breakdown for each project
 
 ## Testing
 

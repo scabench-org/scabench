@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Curate ScaBench dataset based on specific criteria:
-1. At least one available GitHub repo
+1. At least one existing GitHub repo (not returning 404)
 2. At least 5 total vulnerabilities
 3. At least 1 high or critical finding
-4. Run cloc on repositories
+4. Run cloc on repositories (optional - if fails, project is still included)
 """
 
 import json
@@ -77,7 +77,7 @@ def check_github_repo(url: str) -> bool:
 
 
 def get_first_available_repo(codebases: List[Any]) -> Optional[str]:
-    """Find the first available GitHub repository from a list."""
+    """Find the first available (non-404) GitHub repository from a list."""
     valid_repos = []
     
     for codebase in codebases:
@@ -96,7 +96,9 @@ def get_first_available_repo(codebases: List[Any]) -> Optional[str]:
             continue
             
         if repo_url and "github.com" in repo_url:
-            valid_repos.append(repo_url)
+            # Check if the repo actually exists (not 404)
+            if check_github_repo(repo_url):
+                valid_repos.append(repo_url)
     
     # Prioritize audit platform repos (code-423n4, sherlock, etc)
     audit_platforms = ["code-423n4", "sherlock-audit", "cantina-xyz"]
@@ -198,9 +200,14 @@ def run_cloc_on_repo(repo_url: str) -> Dict[str, Any]:
     return cloc_stats
 
 
-def meets_criteria(entry: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
+def meets_criteria(entry: Dict[str, Any], min_vulnerabilities: int = 5, min_high_critical: int = 1) -> Tuple[bool, str, Dict[str, Any]]:
     """
     Check if an entry meets all criteria.
+    
+    Args:
+        entry: The project entry to check
+        min_vulnerabilities: Minimum number of total vulnerabilities required
+        min_high_critical: Minimum number of high or critical vulnerabilities required
     
     Returns:
         (meets_criteria, reason, stats)
@@ -212,10 +219,10 @@ def meets_criteria(entry: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
     if not codebases:
         return False, "No codebases listed", stats
     
-    # Check for available GitHub repo
+    # Check for existing (non-404) GitHub repo
     available_repo = get_first_available_repo(codebases)
     if not available_repo:
-        return False, "No available GitHub repository", stats
+        return False, "No existing GitHub repository (all repos returned 404)", stats
     
     stats["available_repo"] = available_repo
     
@@ -223,8 +230,8 @@ def meets_criteria(entry: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
     vulnerabilities = entry.get("vulnerabilities", [])
     total_vulns = len(vulnerabilities)
     
-    if total_vulns < 5:
-        return False, f"Only {total_vulns} vulnerabilities (need 5+)", stats
+    if total_vulns < min_vulnerabilities:
+        return False, f"Only {total_vulns} vulnerabilities (need {min_vulnerabilities}+)", stats
     
     # Count by severity
     critical, high, medium, low = count_vulnerabilities_by_severity(vulnerabilities)
@@ -235,14 +242,14 @@ def meets_criteria(entry: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
     stats["medium_count"] = medium
     stats["low_count"] = low
     
-    # Check for at least 1 high or critical
-    if critical + high < 1:
-        return False, "No high or critical vulnerabilities", stats
+    # Check for minimum high or critical
+    if critical + high < min_high_critical:
+        return False, f"Only {critical + high} high/critical vulnerabilities (need {min_high_critical}+)", stats
     
     return True, "Meets all criteria", stats
 
 
-def generate_report(project_stats: List[ProjectStats], total_projects: int, output_path: Path):
+def generate_report(project_stats: List[ProjectStats], total_projects: int, output_path: Path, min_vulnerabilities: int = 5, min_high_critical: int = 1):
     """Generate a detailed report of the curation process."""
     
     report_lines = [
@@ -255,9 +262,10 @@ def generate_report(project_stats: List[ProjectStats], total_projects: int, outp
         f"- Retention rate: {len(project_stats)/total_projects*100:.1f}%",
         "",
         "## Criteria Applied",
-        "1. At least one available GitHub repository",
-        "2. At least 5 total vulnerabilities",
-        "3. At least 1 high or critical finding",
+        "1. At least one existing GitHub repository (not returning 404)",
+        f"2. At least {min_vulnerabilities} total vulnerabilities",
+        f"3. At least {min_high_critical} high or critical finding(s)",
+        "4. CLOC statistics added when repository can be cloned (optional)",
         "",
         "## Selected Projects",
         ""
@@ -299,8 +307,20 @@ def generate_report(project_stats: List[ProjectStats], total_projects: int, outp
             ])
     
     # Add aggregate statistics
+    total_lines = sum(
+        s.cloc_stats.get("total_lines", 0) 
+        for s in project_stats 
+        if s.cloc_stats and not s.cloc_stats.get("error")
+    )
+    
     total_solidity_lines = sum(
         s.cloc_stats.get("solidity_lines", 0) 
+        for s in project_stats 
+        if s.cloc_stats and not s.cloc_stats.get("error")
+    )
+    
+    total_files = sum(
+        s.cloc_stats.get("total_files", 0) 
         for s in project_stats 
         if s.cloc_stats and not s.cloc_stats.get("error")
     )
@@ -311,7 +331,9 @@ def generate_report(project_stats: List[ProjectStats], total_projects: int, outp
     
     report_lines.extend([
         "## Aggregate Statistics",
+        f"- **Total Lines of Code (all languages)**: {total_lines:,}",
         f"- **Total Solidity Lines**: {total_solidity_lines:,}",
+        f"- **Total Files**: {total_files:,}",
         f"- **Total Vulnerabilities**: {total_vulns:,}",
         f"- **Total Critical**: {total_critical:,}",
         f"- **Total High**: {total_high:,}",
@@ -346,6 +368,18 @@ def main():
         type=str,
         default="curation_report.md",
         help="Path to output report file (default: curation_report.md)"
+    )
+    parser.add_argument(
+        "--min-vulnerabilities",
+        type=int,
+        default=5,
+        help="Minimum number of total vulnerabilities required (default: 5)"
+    )
+    parser.add_argument(
+        "--min-high-critical",
+        type=int,
+        default=1,
+        help="Minimum number of high or critical vulnerabilities required (default: 1)"
     )
     
     args = parser.parse_args()
@@ -382,7 +416,7 @@ def main():
         project_name = entry.get("name", entry.get("project_id", "Unknown"))
         print(f"[{i}/{len(dataset)}] Processing {project_name}...", end=" ")
         
-        meets, reason, stats = meets_criteria(entry)
+        meets, reason, stats = meets_criteria(entry, args.min_vulnerabilities, args.min_high_critical)
         
         if meets:
             print(f"✓ {reason}")
@@ -442,7 +476,7 @@ def main():
     
     # Generate report
     report_path = Path(args.report)
-    generate_report(project_stats_list, len(dataset), report_path)
+    generate_report(project_stats_list, len(dataset), report_path, args.min_vulnerabilities, args.min_high_critical)
     
     console.print(f"[green]✓ Report saved to {report_path}[/green]")
     

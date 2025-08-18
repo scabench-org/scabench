@@ -5,6 +5,18 @@ A framework for evaluating AI code analysis contract audit agents using recent r
 - Run baseline LLM analysis to establish performance benchmarks
 - Automatically evaluate and compare results (WIP)
 
+## Available Curated Datasets
+
+| Dataset | Report | Time Range | Projects | Vulnerabilities | High/Critical | Total LoC | Solidity LoC |
+|---------|--------|------------|----------|-----------------|---------------|-----------|--------------|
+| [curated-2025-08-18.json](./datasets/curated-2025-08-18.json) | [Report](./datasets/curated-2025-08-18.md) | 2024-08 to 2025-08 | 37 | 676 | 150 | 3.3M | 267K |
+
+**Dataset Statistics:**
+- **Source**: 269 original projects filtered to 37 (13.8% retention rate)
+- **Platforms**: Code4rena, Cantina, and Sherlock
+- **Languages**: Solidity, Rust, Go, TypeScript, and more
+- **Curation Criteria**: Projects must have accessible GitHub repositories, ≥5 vulnerabilities, and ≥1 high/critical finding
+
 ## Components
 
 ### 1. Dataset Generator

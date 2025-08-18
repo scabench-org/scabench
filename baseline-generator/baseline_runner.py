@@ -194,23 +194,181 @@ class SourceFileAnalyzer:
         
         logger.info(f"Found {len(source_files)} source files to analyze")
         
-        # Analyze files in parallel with rate limiting
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = []
-            for file_path in source_files:
-                future = executor.submit(self._analyze_file, file_path, repo_path)
-                futures.append((future, file_path))
-                time.sleep(0.2)  # Rate limiting
-            
-            for future, file_path in futures:
-                try:
-                    file_findings = future.result(timeout=60)
-                    findings.extend(file_findings)
-                    logger.info(f"Analyzed {file_path}: {len(file_findings)} findings")
-                except Exception as e:
-                    logger.error(f"Failed to analyze {file_path}: {e}")
+        # Determine batch size based on number of files
+        if len(source_files) > 50:
+            # For large projects, batch files together
+            batch_size = 10  # Analyze 10 files per LLM call
+            logger.info(f"Large project detected. Using batch analysis with batch size {batch_size}")
+            findings = self._analyze_files_in_batches(source_files, repo_path, batch_size)
+        else:
+            # For smaller projects, analyze files individually
+            logger.info("Small project. Analyzing files individually")
+            # Analyze files in parallel with rate limiting
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = []
+                for file_path in source_files:
+                    future = executor.submit(self._analyze_file, file_path, repo_path)
+                    futures.append((future, file_path))
+                    time.sleep(0.2)  # Rate limiting
+                
+                for future, file_path in futures:
+                    try:
+                        file_findings = future.result(timeout=60)
+                        findings.extend(file_findings)
+                        logger.info(f"Analyzed {file_path}: {len(file_findings)} findings")
+                    except Exception as e:
+                        logger.error(f"Failed to analyze {file_path}: {e}")
         
         return findings
+    
+    def _analyze_files_in_batches(self, source_files: List[Path], repo_path: Path, batch_size: int) -> List[Finding]:
+        """Analyze multiple files in batches to reduce API calls"""
+        all_findings = []
+        
+        # Process files in batches
+        for i in range(0, len(source_files), batch_size):
+            batch = source_files[i:i + batch_size]
+            logger.info(f"Analyzing batch {i//batch_size + 1}/{(len(source_files) + batch_size - 1)//batch_size} ({len(batch)} files)")
+            
+            try:
+                batch_findings = self._analyze_batch(batch, repo_path)
+                all_findings.extend(batch_findings)
+                logger.info(f"Batch analysis found {len(batch_findings)} vulnerabilities")
+                time.sleep(1)  # Rate limiting between batches
+            except Exception as e:
+                logger.error(f"Failed to analyze batch: {e}")
+        
+        return all_findings
+    
+    def _analyze_batch(self, file_paths: List[Path], repo_path: Path) -> List[Finding]:
+        """Analyze a batch of files in a single LLM call"""
+        # Prepare combined content
+        files_content = []
+        file_map = {}  # Map to track which content belongs to which file
+        
+        for file_path in file_paths:
+            try:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
+                
+                # Skip very large files
+                if len(content) > 50000:  # 50KB limit for batch processing
+                    logger.warning(f"Skipping large file in batch: {file_path}")
+                    continue
+                
+                relative_path = file_path.relative_to(repo_path)
+                files_content.append({
+                    'path': str(relative_path),
+                    'content': content
+                })
+                file_map[str(relative_path)] = file_path
+                
+            except Exception as e:
+                logger.error(f"Error reading file {file_path}: {e}")
+        
+        if not files_content:
+            return []
+        
+        # Determine language (assume same language for batch)
+        ext = file_paths[0].suffix
+        language = None
+        for lang, extensions in self.LANGUAGE_EXTENSIONS.items():
+            if ext in extensions:
+                language = lang
+                break
+        
+        if not language:
+            return []
+        
+        # Call LLM with batch
+        findings = self._call_llm_batch(files_content, language)
+        
+        # Map findings back to actual file paths
+        for finding in findings:
+            if finding.file_path in file_map:
+                finding.file_path = str(file_map[finding.file_path])
+        
+        return findings
+    
+    def _call_llm_batch(self, files_content: List[Dict], language: str) -> List[Finding]:
+        """Call LLM to analyze multiple files at once"""
+        
+        # Build prompt with all files
+        files_text = ""
+        for file_info in files_content:
+            files_text += f"\n=== File: {file_info['path']} ===\n"
+            files_text += f"```{language}\n{file_info['content']}\n```\n"
+        
+        prompt = f"""You are a security auditor analyzing {language} code for vulnerabilities.
+Analyze the following files and identify security issues you are confident about.
+
+{files_text}
+
+For each vulnerability found, provide:
+1. File path where the issue was found
+2. Severity (high/medium/low/informational)
+3. A clear, concise title
+4. A brief description (1-2 sentences max)
+5. Your confidence level (0.0 to 1.0)
+
+IMPORTANT INSTRUCTIONS:
+- Keep descriptions brief and concise (1-2 sentences)
+- Only report issues you are confident about (confidence > 0.7)
+- Focus on actual security vulnerabilities
+- Include the file path for each finding
+
+Respond in JSON format:
+{{
+  "findings": [
+    {{
+      "file_path": "path/to/file.ext",
+      "severity": "high|medium|low|informational",
+      "title": "Clear vulnerability title",
+      "description": "Brief 1-2 sentence explanation",
+      "confidence": 0.8
+    }}
+  ]
+}}
+
+If no vulnerabilities are found, return an empty findings array."""
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are a security auditor specializing in smart contract and blockchain security."},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"},
+                timeout=120  # Longer timeout for batch processing
+            )
+            
+            # Parse response
+            result = json.loads(response.choices[0].message.content)
+            
+            # Convert to Finding objects
+            findings = []
+            for finding_data in result.get('findings', []):
+                # Only include high-confidence findings
+                if finding_data.get('confidence', 0) < 0.7:
+                    continue
+                
+                finding = Finding(
+                    file_path=finding_data.get('file_path', 'unknown'),
+                    severity=finding_data.get('severity', 'medium'),
+                    title=finding_data.get('title', 'Unknown Issue'),
+                    description=finding_data.get('description', ''),
+                    line_start=finding_data.get('line_start'),
+                    line_end=finding_data.get('line_end'),
+                    confidence=finding_data.get('confidence', 0.7)
+                )
+                findings.append(finding)
+            
+            return findings
+            
+        except Exception as e:
+            logger.error(f"LLM batch call failed: {str(e)}")
+            return []
     
     def _find_source_files(self, repo_path: Path) -> List[Path]:
         """Find all source files in the repository"""
@@ -222,18 +380,48 @@ class SourceFileAnalyzer:
                 files = list(repo_path.rglob(f'*{ext}'))
                 source_files.extend(files)
         
+        # Detect primary language
+        primary_language = None
+        file_counts = {}
+        for lang, extensions in self.LANGUAGE_EXTENSIONS.items():
+            count = sum(1 for f in source_files if f.suffix in extensions)
+            if count > 0:
+                file_counts[lang] = count
+        
+        if file_counts:
+            primary_language = max(file_counts, key=file_counts.get)
+        
         # Filter out test files and dependencies
         filtered_files = []
         for file_path in source_files:
             path_str = str(file_path)
+            path_lower = path_str.lower()
+            
             # Skip test files, mocks, and dependencies
-            if any(skip in path_str.lower() for skip in [
+            skip_patterns = [
                 'test', 'mock', 'node_modules', 'vendor', '.git',
                 'lib/', 'libs/', 'dependencies/', 'build/', 'dist/',
-                'target/', 'out/', '.deps'
-            ]):
+                'target/', 'out/', '.deps', 'example', 'sample',
+                'fixture', 'stub', '.t.sol', '_test.', 'script/',
+                'deploy/', 'migration/', 'hardhat', 'foundry',
+                'forge-std/', 'openzeppelin-contracts/'
+            ]
+            
+            if any(skip in path_lower for skip in skip_patterns):
                 continue
-            filtered_files.append(file_path)
+                
+            # For Solidity projects, prioritize src/ and contracts/ directories
+            if primary_language == 'solidity':
+                # Prioritize main contract files
+                if '/src/' in path_str or '/contracts/' in path_str:
+                    if not any(skip in path_lower for skip in ['interface/', 'interfaces/', 'library/', 'libraries/']):
+                        filtered_files.insert(0, file_path)  # Add to front
+                    else:
+                        filtered_files.append(file_path)
+                else:
+                    filtered_files.append(file_path)
+            else:
+                filtered_files.append(file_path)
         
         return filtered_files
     
@@ -244,7 +432,7 @@ class SourceFileAnalyzer:
                 content = f.read()
             
             # Skip very large files
-            if len(content) > 100000:
+            if len(content) > 100000:  # 100KB limit for individual analysis
                 logger.warning(f"Skipping large file: {file_path}")
                 return []
             

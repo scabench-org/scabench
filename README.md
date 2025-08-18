@@ -1,9 +1,9 @@
 # SCABench
-A framework for evaluating AI code analysis contract audit agents using recent real-world data.
+A framework for evaluating AI code analysis contract audit agents using recent real-world data. Provides an easy way to generate new evals once SOTA models have memorized public audit data.
 
-- Easily compile fresh eval datasets (codebase -> vulnerabilities) from multiple sources
+- Compile fresh eval datasets (codebase -> vulnerabilities) from multiple sources
 - Run baseline LLM analysis to establish performance benchmarks
-- Automatically evaluate and compare results
+- Automatically evaluate and compare results (WIP)
 
 ## Components
 
@@ -24,15 +24,13 @@ See the [dataset-generator README](./dataset-generator/README.md) for detailed u
 An LLM-based security analysis tool that establishes baseline performance metrics for vulnerability detection.
 
 - **Location**: [`/baseline-generator`](./baseline-generator)
-- **Purpose**: Analyzes codebases using trivial LLM prompting to find vulnerabilities and evaluates performance against expected findings
-- **Features**:
-  - Automatic repository downloading and caching
-  - Multi-language support (Solidity, Rust, Go, Python, etc.)
-  - Session management for resuming interrupted runs
-  - Comprehensive evaluation system with found/missed/false positive metrics
-  - Detailed debugging output for investigating results
+- **Purpose**: Analyzes codebases using trivial LLM prompting to create a baseline result for the dataset
 
 See the [baseline-generator README](./baseline-generator/README.md) for detailed usage instructions.
+
+### 2. Judging
+
+TODO
 
 ## Quick Start
 
@@ -49,11 +47,6 @@ export OPENAI_API_KEY=your_key_here
 python baseline_runner.py ../dataset-generator/datasets/recent_audits.json \
   --output-dir results \
   --max-files 10
-```
-
-### 3. Evaluate Performance
-```bash
-python evaluate_baseline.py results ../dataset-generator/datasets/recent_audits.json
 ```
 
 ## Complete Workflow Example
@@ -86,34 +79,6 @@ cat baseline_results/evaluation/evaluation_summary.json | jq '.overall_metrics'
   "total_false_positives": 8,
   "overall_recall": "35.3%"
 }
-```
-
-## Performance Metrics
-
-The framework evaluates AI agents using three key metrics:
-
-1. **Found Issues**: Vulnerabilities correctly identified (true positives)
-2. **Missed Issues**: Expected vulnerabilities not detected (false negatives)  
-3. **False Positives**: Detected issues that don't match any expected vulnerability
-
-### Severity-Based Scoring
-- Tracks performance separately for High, Medium, and Low severity issues
-- Ignores informational findings
-- Provides detailed breakdown per project and overall
-
-## Directory Structure
-
-```
-ai-auditor-eval/
-├── dataset-generator/       # Scrapes audit data from platforms
-│   ├── scrapers/           # Platform-specific scrapers
-│   ├── datasets/           # Generated JSON datasets
-│   └── test/              # Test files
-├── baseline-generator/      # LLM-based baseline analysis
-│   ├── session_manager.py  # Resume interrupted runs
-│   ├── evaluate_baseline.py # Compare against expected
-│   └── results/           # Analysis outputs
-└── datasets/               # Shared dataset storage
 ```
 
 ## Requirements

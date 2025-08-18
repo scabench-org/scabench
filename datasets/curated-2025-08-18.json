@@ -3845,5 +3845,5 @@
         "description": "Source: https://github.com/sherlock-audit/2025-03-crestal-network-judging/issues/576\n\n**Summary:**\nNon whitelisted user can also create agent by calling create Agent With NFTinstead of create Agent With Whitelist Usersaffecting the motive of protocol to only allow whitelisted user to create agent Root Cause create Agent With Whitelist Usersfunction is designed by protocol with motive to only allow a particular amount of whitelisted users to create agent but this motive can be bypassed by anyone by calling create Agent With NFTfunction instead. Internal Pre-conditions NA External Pre-conditions NA Attack Path 1. Non whitelisted user can call create Agent With NFT function instead of create Agent With Whitelist Users function and can create agent breaking the whitelist check 19\n\n**Impact:**\nNon whitelisted user can also create agent breaking the motive of protocol to only allow whitelisted users to create agent. Po C No response Mitigation \u2022Implement pausability feature in create Agent With NFTfunction so that admin can pause the access of it until whitelist period for creation of agent and later can enable it."
       }
     ]
-  },
+  }
 ]

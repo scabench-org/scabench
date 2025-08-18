@@ -163,14 +163,15 @@ class SherlockScraper(BaseScraper):
             full_text = ""
             
             # Extract text from all pages
+            raw_text = ""  # Keep raw text for repo/commit extraction
             for page_num in range(len(pdf_reader.pages)):
                 page = pdf_reader.pages[page_num]
                 page_text = page.extract_text()
+                raw_text += page_text + "\n"
                 
                 # Fix common PDF extraction issues with missing spaces
-                page_text = self._fix_pdf_spacing(page_text)
-                
-                full_text += page_text + "\n"
+                fixed_text = self._fix_pdf_spacing(page_text)
+                full_text += fixed_text + "\n"
             
             # Extract project information
             project_name = self._extract_project_name(full_text) or contest_id
@@ -186,8 +187,8 @@ class SherlockScraper(BaseScraper):
                 report_url=f"{self.GITHUB_RAW_URL}/audits/{contest_id}.pdf"
             )
             
-            # Extract GitHub information
-            github_info = self._extract_github_from_text(full_text)
+            # Extract GitHub information (use raw_text to preserve commit hashes)
+            github_info = self._extract_github_from_text(raw_text)
             if github_info:
                 repo_url, commit = github_info
                 codebase = Codebase(
@@ -567,56 +568,68 @@ class SherlockScraper(BaseScraper):
     def _extract_github_from_text(self, text: str) -> Optional[tuple]:
         """Extract the actual source code repository from Sherlock PDF."""
         
-        # Clean up the text - remove extra spaces and normalize line breaks
-        clean_text = ' '.join(text.split())
+        # Use the raw text directly (no cleaning that might break URLs/hashes)
         
-        # Look for Repository: line in Scope section
-        repo_pattern = r'Repository:\s*([^\s]+)'
-        repo_match = re.search(repo_pattern, clean_text)
+        # Look for Repository: line - try multiple patterns
+        repo_url = None
+        repo_patterns = [
+            r'Repository\s*:\s*([A-Za-z0-9\-_]+/[A-Za-z0-9\-_\-]+)',  # Org/repo format
+            r'Repository\s*:\s*(https?://github\.com/[^\s]+)',  # Full URL
+            r'Repository\s*:\s*([^\s\n]+)',  # Any non-space until newline
+        ]
         
-        if repo_match:
-            # Extract the repo path (e.g., MetaLend-DeFi/metalend-rebalancing-contracts)
-            repo_path = repo_match.group(1).strip()
-            
-            # Convert to full GitHub URL if it's just a path
-            if not repo_path.startswith('http'):
-                repo_url = f"https://github.com/{repo_path}"
-            else:
-                repo_url = repo_path
-            
+        for pattern in repo_patterns:
+            repo_match = re.search(pattern, text)
+            if repo_match:
+                repo_path = repo_match.group(1).strip()
+                # Convert to full GitHub URL if it's just a path
+                if not repo_path.startswith('http'):
+                    repo_url = f"https://github.com/{repo_path}"
+                else:
+                    repo_url = repo_path
+                self.logger.debug(f"Found repository with pattern '{pattern}': {repo_url}")
+                break
+        
+        if repo_url:
             # Look for commit hashes - try multiple patterns
             commit = None
             
-            # Pattern 1: "Audited Commit: <hash>"
-            audited_pattern = r'Audited\s+Commit:\s*([0-9a-fA-F]{7,40})'
-            audited_match = re.search(audited_pattern, clean_text)
+            # Pattern 1: "Audited Commit: <hash>" - most reliable
+            audited_pattern = r'Audited\s+Commit\s*:\s*([0-9a-fA-F]{7,40})'
+            audited_match = re.search(audited_pattern, text, re.IGNORECASE)
             if audited_match:
-                commit = audited_match.group(1)
+                commit = audited_match.group(1).strip()
                 self.logger.debug(f"Found audited commit: {commit}")
             
             # Pattern 2: If no audited commit, try "Final Commit: <hash>"
             if not commit:
-                # Look for full hash first
-                final_pattern_full = r'Final\s+Commit:\s*([0-9a-fA-F]{40})'
-                final_match = re.search(final_pattern_full, clean_text)
+                final_pattern = r'Final\s+Commit\s*:\s*([0-9a-fA-F]{7,40})'
+                final_match = re.search(final_pattern, text, re.IGNORECASE)
                 if final_match:
-                    commit = final_match.group(1)
-                    self.logger.debug(f"Found final commit (full): {commit}")
-                else:
-                    # Try shorter hash if full not found
-                    final_pattern_short = r'Final\s+Commit:\s*([0-9a-fA-F]{7,39})'
-                    final_match = re.search(final_pattern_short, clean_text)
-                    if final_match:
-                        commit = final_match.group(1)
-                        self.logger.debug(f"Found final commit (short): {commit}")
+                    commit = final_match.group(1).strip()
+                    self.logger.debug(f"Found final commit: {commit}")
             
             # Pattern 3: Look for "Commit Hash" section
             if not commit:
-                hash_pattern = r'Commit\s+Hash\s*([0-9a-fA-F]{40})'
-                hash_match = re.search(hash_pattern, clean_text)
+                hash_pattern = r'Commit\s+Hash\s*:\s*([0-9a-fA-F]{7,40})'
+                hash_match = re.search(hash_pattern, text, re.IGNORECASE)
                 if hash_match:
-                    commit = hash_match.group(1)
+                    commit = hash_match.group(1).strip()
                     self.logger.debug(f"Found commit hash: {commit}")
+            
+            # Pattern 4: Try without colon separator
+            if not commit:
+                patterns = [
+                    r'Audited\s+Commit\s+([0-9a-fA-F]{7,40})',
+                    r'Commit\s+([0-9a-fA-F]{40})\s',  # Full hash with space after
+                    r'commit\s*[:=]\s*([0-9a-fA-F]{7,40})',  # Various separators
+                ]
+                for pattern in patterns:
+                    match = re.search(pattern, text, re.IGNORECASE)
+                    if match:
+                        commit = match.group(1).strip()
+                        self.logger.debug(f"Found commit with pattern '{pattern}': {commit}")
+                        break
             
             self.logger.info(f"Extracted repo: {repo_url}, commit: {commit}")
             return repo_url, commit

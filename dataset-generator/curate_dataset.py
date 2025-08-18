@@ -76,6 +76,17 @@ def check_github_repo(url: str) -> bool:
         return True
 
 
+def fix_code4rena_findings_url(url: str) -> str:
+    """
+    Fix Code4rena findings URLs by converting them to actual code repos.
+    Changes: https://github.com/code-423n4/2024-10-superposition-findings
+    To: https://github.com/code-423n4/2024-10-superposition
+    """
+    if "code-423n4" in url and url.endswith("-findings"):
+        return url[:-9]  # Remove "-findings" suffix
+    return url
+
+
 def get_first_available_repo(codebases: List[Any]) -> Optional[str]:
     """Find the first available (non-404) GitHub repository from a list."""
     valid_repos = []
@@ -96,6 +107,12 @@ def get_first_available_repo(codebases: List[Any]) -> Optional[str]:
             continue
             
         if repo_url and "github.com" in repo_url:
+            # Fix Code4rena findings URLs
+            original_url = repo_url
+            repo_url = fix_code4rena_findings_url(repo_url)
+            if original_url != repo_url:
+                print(f"    Fixed Code4rena URL: {original_url} -> {repo_url}")
+            
             # Check if the repo actually exists (not 404)
             if check_github_repo(repo_url):
                 valid_repos.append(repo_url)

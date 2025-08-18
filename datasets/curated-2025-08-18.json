@@ -3283,14 +3283,14 @@
     "name": "2024.09.13 - Final - Perennial V2 Update 3 Audit Report",
     "platform": "sherlock",
     "codebases": [
-      {
-        "codebase_id": "2024.09.13 - Final - Perennial V2 Update 3 Audit Report_unknow",
-        "repo_url": "https://github.com/equilibria-xyz/emptyset-mono",
-        "commit": "",
-        "tree_url": "",
-        "tarball_url": ""
-      }
-    ],
+        {
+          "codebase_id": "2024.09.13 - Final - Perennial V2 Update 3 Audit Report_90b1b5",
+          "repo_url": "https://github.com/equilibria-xyz/emptyset-mono",
+          "commit": "90b1b5e9422f7a06afadeb7d2d7bc00ca1cfd459",
+          "tree_url": "https://github.com/equilibria-xyz/emptyset-mono/tree/90b1b5e9422f7a06afadeb7d2d7bc00ca1cfd459",
+          "tarball_url": "https://github.com/equilibria-xyz/emptyset-mono/archive/90b1b5e9422f7a06afadeb7d2d7bc00ca1cfd459.tar.gz"
+        }
+      ],
     "vulnerabilities": [
       {
         "finding_id": "2024.09.13 - Final - Perennial V2 Update 3 Audit Report_H-01",
@@ -3425,14 +3425,14 @@
     "name": "Flayer",
     "platform": "sherlock",
     "codebases": [
-      {
-        "codebase_id": "Flayer_unknow",
-        "repo_url": "https://github.com/Floor",
-        "commit": "",
-        "tree_url": "",
-        "tarball_url": ""
-      }
-    ],
+        {
+          "codebase_id": "Flayer_6deb78",
+          "repo_url": "https://github.com/FloorDAO/flayer",
+          "commit": "6deb7863af19dd679c5638c299eb96a89626d455",
+          "tree_url": "https://github.com/FloorDAO/flayer/tree/6deb7863af19dd679c5638c299eb96a89626d455",
+          "tarball_url": "https://github.com/FloorDAO/flayer/archive/6deb7863af19dd679c5638c299eb96a89626d455.tar.gz"
+        }
+      ],
     "vulnerabilities": [
       {
         "finding_id": "2024.09.15 - Final - Flayer Audit Report_H-01",
@@ -3723,14 +3723,14 @@
     "name": "2024.09.20 - Final - Boost Core Incentive Protocol Audit Report",
     "platform": "sherlock",
     "codebases": [
-      {
-        "codebase_id": "2024.09.20 - Final - Boost Core Incentive Protocol Audit Report_unknow",
-        "repo_url": "https://github.com/rabbitholegg/boost-protocol",
-        "commit": "",
-        "tree_url": "",
-        "tarball_url": ""
-      }
-    ],
+        {
+          "codebase_id": "2024.09.20 - Final - Boost Core Incentive Protocol Audit Report_5711a9",
+          "repo_url": "https://github.com/rabbitholegg/boost-protocol",
+          "commit": "5711a9160c51abec01056c5a70501fd13f6ac489",
+          "tree_url": "https://github.com/rabbitholegg/boost-protocol/tree/5711a9160c51abec01056c5a70501fd13f6ac489",
+          "tarball_url": "https://github.com/rabbitholegg/boost-protocol/archive/5711a9160c51abec01056c5a70501fd13f6ac489.tar.gz"
+        }
+      ],
     "vulnerabilities": [
       {
         "finding_id": "2024.09.20 - Final - Boost Core Incentive Protocol Audit Report_H-01",
@@ -3781,14 +3781,14 @@
     "name": "Morph L 2",
     "platform": "sherlock",
     "codebases": [
-      {
-        "codebase_id": "Morph L 2_unknow",
-        "repo_url": "https://github.com/morph-l",
-        "commit": "",
-        "tree_url": "",
-        "tarball_url": ""
-      }
-    ],
+        {
+          "codebase_id": "Morph L 2_22ca80",
+          "repo_url": "https://github.com/morph-l2/morph",
+          "commit": "22ca805e2d09c9d0bddb3e8a52ddd7d3435ce769",
+          "tree_url": "https://github.com/morph-l2/morph/tree/22ca805e2d09c9d0bddb3e8a52ddd7d3435ce769",
+          "tarball_url": "https://github.com/morph-l2/morph/archive/22ca805e2d09c9d0bddb3e8a52ddd7d3435ce769.tar.gz"
+        }
+      ],
     "vulnerabilities": [
       {
         "finding_id": "2024.09.23 - Final - MorphL2 Audit Report_H-01",
@@ -3875,14 +3875,14 @@
     "name": "Debita Finance",
     "platform": "sherlock",
     "codebases": [
-      {
-        "codebase_id": "Debita Finance_unknow",
-        "repo_url": "https://github.com/Debita",
-        "commit": "",
-        "tree_url": "",
-        "tarball_url": ""
-      }
-    ],
+        {
+          "codebase_id": "Debita Finance_b0120d",
+          "repo_url": "https://github.com/DebitaFinance/Debita-V3-Contracts",
+          "commit": "b0120d9",
+          "tree_url": "https://github.com/DebitaFinance/Debita-V3-Contracts/tree/b0120d9",
+          "tarball_url": "https://github.com/DebitaFinance/Debita-V3-Contracts/archive/b0120d9.tar.gz"
+        }
+      ],
     "vulnerabilities": [
       {
         "finding_id": "2024.11.25 - Final - Debita Finance V3 Audit Report_H-01",
@@ -4053,14 +4053,14 @@
     "name": "Oku",
     "platform": "sherlock",
     "codebases": [
-      {
-        "codebase_id": "Oku_unknow",
-        "repo_url": "https://github.com/gfx-labs/oku-custom-order-types",
-        "commit": "",
-        "tree_url": "",
-        "tarball_url": ""
-      }
-    ],
+        {
+          "codebase_id": "Oku_9e31b4",
+          "repo_url": "https://github.com/gfx-labs/oku-custom-order-types",
+          "commit": "9e31b40",
+          "tree_url": "https://github.com/gfx-labs/oku-custom-order-types/tree/9e31b40",
+          "tarball_url": "https://github.com/gfx-labs/oku-custom-order-types/archive/9e31b40.tar.gz"
+        }
+      ],
     "vulnerabilities": [
       {
         "finding_id": "2024.12.09 - Final - Oku's New Order Types Contract Contest Audit Report_H-01",
@@ -4183,14 +4183,14 @@
     "name": "Tally",
     "platform": "sherlock",
     "codebases": [
-      {
-        "codebase_id": "Tally_unknow",
-        "repo_url": "https://github.com/withtally/govstaking",
-        "commit": "",
-        "tree_url": "",
-        "tarball_url": ""
-      }
-    ],
+        {
+          "codebase_id": "Tally_fda09a",
+          "repo_url": "https://github.com/withtally/staker",
+          "commit": "fda09a661bbe1b5800fa72f52d6367de46740551",
+          "tree_url": "https://github.com/withtally/staker/tree/fda09a661bbe1b5800fa72f52d6367de46740551",
+          "tarball_url": "https://github.com/withtally/staker/archive/fda09a661bbe1b5800fa72f52d6367de46740551.tar.gz"
+        }
+      ],
     "vulnerabilities": [
       {
         "finding_id": "2024.12.17 - Final - Tally Collaborative Audit Report_H-01",
@@ -4265,14 +4265,14 @@
     "name": "Idle Finance",
     "platform": "sherlock",
     "codebases": [
-      {
-        "codebase_id": "Idle Finance_unknow",
-        "repo_url": "https://github.com/Idle-Labs/idle-tranches",
-        "commit": "",
-        "tree_url": "",
-        "tarball_url": ""
-      }
-    ],
+        {
+          "codebase_id": "Idle Finance_b6e581",
+          "repo_url": "https://github.com/Idle-Labs/idle-tranches",
+          "commit": "b6e5813",
+          "tree_url": "https://github.com/Idle-Labs/idle-tranches/tree/b6e5813",
+          "tarball_url": "https://github.com/Idle-Labs/idle-tranches/archive/b6e5813.tar.gz"
+        }
+      ],
     "vulnerabilities": [
       {
         "finding_id": "2024.12.21 - Final - Idle Finance Credit Vaults Audit Report_H-01",
@@ -4311,14 +4311,14 @@
     "name": "Cork Protocol",
     "platform": "sherlock",
     "codebases": [
-      {
-        "codebase_id": "Cork Protocol_unknow",
-        "repo_url": "https://github.com/Cork-Technology/Depeg-swap",
-        "commit": "",
-        "tree_url": "",
-        "tarball_url": ""
-      }
-    ],
+        {
+          "codebase_id": "Cork Protocol_d4fcdd",
+          "repo_url": "https://github.com/Cork-Technology/Depeg-swap",
+          "commit": "d4fcdd524deb5d07a7ccfd6eb49ba5157ed42642",
+          "tree_url": "https://github.com/Cork-Technology/Depeg-swap/tree/d4fcdd524deb5d07a7ccfd6eb49ba5157ed42642",
+          "tarball_url": "https://github.com/Cork-Technology/Depeg-swap/archive/d4fcdd524deb5d07a7ccfd6eb49ba5157ed42642.tar.gz"
+        }
+      ],
     "vulnerabilities": [
       {
         "finding_id": "2025.01.02 - Final - Cork Best Efforts Audit Contest Report _H-01",
@@ -4435,14 +4435,14 @@
     "name": "AXION",
     "platform": "sherlock",
     "codebases": [
-      {
-        "codebase_id": "AXION_unknow",
-        "repo_url": "https://github.com/AXION-MONEY/liquidity-amo",
-        "commit": "",
-        "tree_url": "",
-        "tarball_url": ""
-      }
-    ],
+        {
+          "codebase_id": "AXION_9a9ada",
+          "repo_url": "https://github.com/AXION-MONEY/liquidity-amo",
+          "commit": "9a9adab905878a3a8c4fbe7c0851354185d8466a",
+          "tree_url": "https://github.com/AXION-MONEY/liquidity-amo/tree/9a9adab905878a3a8c4fbe7c0851354185d8466a",
+          "tarball_url": "https://github.com/AXION-MONEY/liquidity-amo/archive/9a9adab905878a3a8c4fbe7c0851354185d8466a.tar.gz"
+        }
+      ],
     "vulnerabilities": [
       {
         "finding_id": "2025.01.03 - Final - Axion Audit Report_H-01",
@@ -4511,14 +4511,14 @@
     "name": "SYMMIO",
     "platform": "sherlock",
     "codebases": [
-      {
-        "codebase_id": "SYMMIO_unknow",
-        "repo_url": "https://github.com/SYMM-IO/token",
-        "commit": "",
-        "tree_url": "",
-        "tarball_url": ""
-      }
-    ],
+        {
+          "codebase_id": "SYMMIO_cfe192",
+          "repo_url": "https://github.com/SYMM-IO/token",
+          "commit": "cfe1920",
+          "tree_url": "https://github.com/SYMM-IO/token/tree/cfe1920",
+          "tarball_url": "https://github.com/SYMM-IO/token/archive/cfe1920.tar.gz"
+        }
+      ],
     "vulnerabilities": [
       {
         "finding_id": "2025.03.10 - Final - Symmio, Staking and Vesting Audit Report_H-01",
@@ -4563,14 +4563,14 @@
     "name": "Crestal Network",
     "platform": "sherlock",
     "codebases": [
-      {
-        "codebase_id": "Crestal Network_unknow",
-        "repo_url": "https://github.com/crestalnetwork/crestal-omni-contracts",
-        "commit": "",
-        "tree_url": "",
-        "tarball_url": ""
-      }
-    ],
+        {
+          "codebase_id": "Crestal Network_dc45e9",
+          "repo_url": "https://github.com/crestalnetwork/crestal-omni-contracts",
+          "commit": "dc45e98af5e247dce5bbe53b0bd5b1f256884f84",
+          "tree_url": "https://github.com/crestalnetwork/crestal-omni-contracts/tree/dc45e98af5e247dce5bbe53b0bd5b1f256884f84",
+          "tarball_url": "https://github.com/crestalnetwork/crestal-omni-contracts/archive/dc45e98af5e247dce5bbe53b0bd5b1f256884f84.tar.gz"
+        }
+      ],
     "vulnerabilities": [
       {
         "finding_id": "2025.03.14 - Final - Crestal Network Audit Report_H-01",
@@ -4621,14 +4621,14 @@
     "name": "Meta Lend",
     "platform": "sherlock",
     "codebases": [
-      {
-        "codebase_id": "Meta Lend_unknow",
-        "repo_url": "https://github.com/Meta",
-        "commit": "",
-        "tree_url": "",
-        "tarball_url": ""
-      }
-    ],
+        {
+          "codebase_id": "Meta Lend_76c1c1",
+          "repo_url": "https://github.com/MetaLend-DeFi/metalend-rebalancing-contracts",
+          "commit": "76c1c116988a22ce1a9711b43a1280a95f1b652e",
+          "tree_url": "https://github.com/MetaLend-DeFi/metalend-rebalancing-contracts/tree/76c1c116988a22ce1a9711b43a1280a95f1b652e",
+          "tarball_url": "https://github.com/MetaLend-DeFi/metalend-rebalancing-contracts/archive/76c1c116988a22ce1a9711b43a1280a95f1b652e.tar.gz"
+        }
+      ],
     "vulnerabilities": [
       {
         "finding_id": "2025.05.30 - Final - MetaLend Collaborative Audit Report_H-01",

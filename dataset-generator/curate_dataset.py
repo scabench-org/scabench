@@ -108,10 +108,7 @@ def get_first_available_repo(codebases: List[Any]) -> Optional[str]:
             
         if repo_url and "github.com" in repo_url:
             # Fix Code4rena findings URLs
-            original_url = repo_url
             repo_url = fix_code4rena_findings_url(repo_url)
-            if original_url != repo_url:
-                print(f"    Fixed Code4rena URL: {original_url} -> {repo_url}")
             
             # Check if the repo actually exists (not 404)
             if check_github_repo(repo_url):
@@ -449,14 +446,30 @@ def main():
                     print(f"  Code Statistics:")
                     print(f"    - Total Files: {cloc_stats.get('total_files', 0):,}")
                     print(f"    - Total Lines: {cloc_stats.get('total_lines', 0):,}")
-                    print(f"    - Solidity: {cloc_stats.get('solidity_lines', 0):,} lines in {cloc_stats.get('solidity_files', 0)} files")
                     
-                    # Show top 3 languages
+                    # Smart contract languages to highlight
+                    smart_contract_langs = ["Solidity", "Rust", "Go", "Move", "Cairo", "Vyper", "Yul", "C++", "C"]
+                    
+                    # Show smart contract languages found
                     if "languages" in cloc_stats and cloc_stats["languages"]:
-                        top_langs = sorted(cloc_stats["languages"].items(), 
-                                         key=lambda x: x[1]["lines"], reverse=True)[:3]
-                        if top_langs:
-                            print(f"    - Top Languages: {', '.join([f'{lang}: {data['lines']:,}' for lang, data in top_langs])}")
+                        sc_langs_found = []
+                        for lang in smart_contract_langs:
+                            if lang in cloc_stats["languages"]:
+                                lang_data = cloc_stats["languages"][lang]
+                                sc_langs_found.append((lang, lang_data["lines"], lang_data["files"]))
+                        
+                        if sc_langs_found:
+                            print(f"    - Smart Contract Languages:")
+                            for lang, lines, files in sorted(sc_langs_found, key=lambda x: x[1], reverse=True):
+                                print(f"      • {lang}: {lines:,} lines in {files} files")
+                        
+                        # Show other top languages
+                        other_langs = [(lang, data) for lang, data in cloc_stats["languages"].items() 
+                                      if lang not in smart_contract_langs]
+                        if other_langs:
+                            top_other = sorted(other_langs, key=lambda x: x[1]["lines"], reverse=True)[:3]
+                            if top_other:
+                                print(f"    - Other Languages: {', '.join([f'{lang}: {data['lines']:,}' for lang, data in top_other])}")
                 else:
                     print(f"  Code Statistics: Error - {cloc_stats['error']}")
             else:

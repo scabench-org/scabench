@@ -565,16 +565,76 @@ class SherlockScraper(BaseScraper):
             return ""
     
     def _extract_github_from_text(self, text: str) -> Optional[tuple]:
-        github_pattern = r'https://github\.com/[^\s]+'
+        """Extract the actual source code repository from Sherlock PDF."""
+        
+        # Clean up the text - remove extra spaces and normalize line breaks
+        clean_text = ' '.join(text.split())
+        
+        # Look for Repository: line in Scope section
+        repo_pattern = r'Repository:\s*([^\s]+)'
+        repo_match = re.search(repo_pattern, clean_text)
+        
+        if repo_match:
+            # Extract the repo path (e.g., MetaLend-DeFi/metalend-rebalancing-contracts)
+            repo_path = repo_match.group(1).strip()
+            
+            # Convert to full GitHub URL if it's just a path
+            if not repo_path.startswith('http'):
+                repo_url = f"https://github.com/{repo_path}"
+            else:
+                repo_url = repo_path
+            
+            # Look for commit hashes - try multiple patterns
+            commit = None
+            
+            # Pattern 1: "Audited Commit: <hash>"
+            audited_pattern = r'Audited\s+Commit:\s*([0-9a-fA-F]{7,40})'
+            audited_match = re.search(audited_pattern, clean_text)
+            if audited_match:
+                commit = audited_match.group(1)
+                self.logger.debug(f"Found audited commit: {commit}")
+            
+            # Pattern 2: If no audited commit, try "Final Commit: <hash>"
+            if not commit:
+                # Look for full hash first
+                final_pattern_full = r'Final\s+Commit:\s*([0-9a-fA-F]{40})'
+                final_match = re.search(final_pattern_full, clean_text)
+                if final_match:
+                    commit = final_match.group(1)
+                    self.logger.debug(f"Found final commit (full): {commit}")
+                else:
+                    # Try shorter hash if full not found
+                    final_pattern_short = r'Final\s+Commit:\s*([0-9a-fA-F]{7,39})'
+                    final_match = re.search(final_pattern_short, clean_text)
+                    if final_match:
+                        commit = final_match.group(1)
+                        self.logger.debug(f"Found final commit (short): {commit}")
+            
+            # Pattern 3: Look for "Commit Hash" section
+            if not commit:
+                hash_pattern = r'Commit\s+Hash\s*([0-9a-fA-F]{40})'
+                hash_match = re.search(hash_pattern, clean_text)
+                if hash_match:
+                    commit = hash_match.group(1)
+                    self.logger.debug(f"Found commit hash: {commit}")
+            
+            self.logger.info(f"Extracted repo: {repo_url}, commit: {commit}")
+            return repo_url, commit
+        
+        # Fallback: Look for GitHub URLs but exclude judging repos
+        github_pattern = r'https://github\.com/([^/\s]+/[^/\s]+)'
         matches = re.findall(github_pattern, text)
         
-        if matches:
-            repo_url = matches[0].rstrip('.,;)')
-            
-            commit_pattern = r'\b[0-9a-f]{40}\b|\b[0-9a-f]{7,10}\b'
-            commit_match = re.search(commit_pattern, text)
-            commit = commit_match.group(0) if commit_match else None
-            
-            return repo_url, commit
+        for match in matches:
+            # Skip judging repos and other non-source repos
+            if 'judging' not in match.lower() and 'audit' not in match.lower():
+                repo_url = f"https://github.com/{match}".rstrip('.,;)')
+                
+                # Look for a commit hash near this URL
+                commit_pattern = r'\b[0-9a-f]{40}\b|\b[0-9a-f]{7,10}\b'
+                commit_match = re.search(commit_pattern, text)
+                commit = commit_match.group(0) if commit_match else None
+                
+                return repo_url, commit
         
         return None

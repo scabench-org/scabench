@@ -32,14 +32,6 @@ A comprehensive scraper system for extracting security audit data from multiple 
 
 See the [dataset-generator README](./dataset-generator/README.md) for detailed usage instructions.
 
-### 2. Baseline Generator
-An LLM-based security analysis tool that establishes baseline performance metrics for vulnerability detection.
-
-- **Location**: [`/baseline-generator`](./baseline-generator)
-- **Purpose**: Analyzes codebases using trivial LLM prompting to create a baseline result for the dataset
-
-See the [baseline-generator README](./baseline-generator/README.md) for detailed usage instructions.
-
 ### 2. Judging
 
 TODO

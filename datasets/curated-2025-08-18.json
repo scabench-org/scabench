@@ -570,13 +570,6 @@
         "commit": "214849c3517eb26b31fe194bceae65cb0f52d2c0",
         "tree_url": "https://github.com/code-423n4/2024-12-secondswap/tree/214849c3517eb26b31fe194bceae65cb0f52d2c0",
         "tarball_url": "https://github.com/code-423n4/2024-12-secondswap/archive/214849c3517eb26b31fe194bceae65cb0f52d2c0.tar.gz"
-      },
-      {
-        "codebase_id": "SecondSwap_main",
-        "repo_url": "https://github.com/code-423n4/media-kit",
-        "commit": "",
-        "tree_url": "",
-        "tarball_url": ""
       }
     ],
     "vulnerabilities": [
@@ -1685,13 +1678,6 @@
         "commit": "4d6694f68e80543885da78666e38c0dc7052d992",
         "tree_url": "https://github.com/code-423n4/2025-04-forte/tree/4d6694f68e80543885da78666e38c0dc7052d992",
         "tarball_url": "https://github.com/code-423n4/2025-04-forte/archive/4d6694f68e80543885da78666e38c0dc7052d992.tar.gz"
-      },
-      {
-        "codebase_id": "Forte: Float128 Solidity Library_main",
-        "repo_url": "https://github.com/code-423n4/media-kit",
-        "commit": "",
-        "tree_url": "",
-        "tarball_url": ""
       }
     ],
     "vulnerabilities": [

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-ScaBench Report Generator - Enhanced Beautiful Version
-Generate comprehensive HTML reports with advanced navigation, collapsible sections, and beautiful styling.
+ScaBench Report Generator
+Generate comprehensive HTML reports with advanced navigation, collapsible sections, and modern styling.
 """
 
 import json
@@ -33,7 +33,7 @@ except ImportError:
 
 
 class ReportGenerator:
-    """Generate beautiful HTML reports from ScaBench scoring results."""
+    """Generate HTML reports from ScaBench scoring results."""
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the report generator."""
@@ -117,8 +117,8 @@ class ReportGenerator:
                        scores_dir: Path,
                        benchmark_file: Optional[Path] = None,
                        output_file: Path = Path("report.html")) -> Path:
-        """Generate beautiful HTML report from scoring results."""
-        console.print("[cyan]Generating Enhanced ScaBench Report...[/cyan]")
+        """Generate HTML report from scoring results."""
+        console.print("Generating ScaBench report...")
         
         # Load all scoring results
         score_files = list(scores_dir.glob("score_*.json"))
@@ -194,11 +194,11 @@ class ReportGenerator:
         with open(output_file, 'w', encoding='utf-8') as f:
             f.write(html_content)
         
-        console.print(f"[green]✨ Beautiful report generated: {output_file}[/green]")
+        console.print(f"Report generated: {output_file}")
         return output_file
     
     def _generate_html(self, scores: List[Dict], stats: Dict, charts: Dict) -> str:
-        """Generate the beautiful HTML content."""
+        """Generate the HTML content."""
         
         # Modern, beautiful CSS with animations and gradients
         css = """
@@ -1227,7 +1227,7 @@ class ReportGenerator:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Generate beautiful ScaBench HTML reports')
+    parser = argparse.ArgumentParser(description='Generate ScaBench HTML reports')
     parser.add_argument('--scores', required=True, help='Directory containing score JSON files')
     parser.add_argument('--output', default='report.html', help='Output HTML file')
     parser.add_argument('--tool-name', default='Security Analyzer', help='Name of the tool')
@@ -1248,7 +1248,7 @@ def main():
         Path(args.output)
     )
     
-    console.print("\n[bold green]Report successfully generated![/bold green]")
+    console.print("\nReport successfully generated")
     console.print(f"View the report: {args.output}")
 
 

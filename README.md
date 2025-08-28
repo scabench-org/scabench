@@ -2,12 +2,9 @@
 
 A comprehensive framework for evaluating security analysis tools and AI agents on real-world smart contract vulnerabilities. ScaBench provides curated datasets from recent audits and official tooling for consistent evaluation.
 
-## 📚 Key Documents
+## 📚 Dataset Documentation
 
-- **[HOW IT WORKS](./HOW_IT_WORKS.md)** - Detailed explanation of all components
-- **[QUICK START](./QUICK_START.md)** - Get running in 2 minutes
-- **[DATASET INFO](./datasets/README.md)** - Dataset format and statistics
-- **[TOOLING README](./TOOLING_README.md)** - Complete tool documentation
+- **[Dataset Format & Statistics](./datasets/README.md)** - Complete dataset information
 
 ## Features
 
@@ -416,7 +413,7 @@ your-tool analyze sources/project1/ > results/project1.json
   }]
 }
 ```
-[See full format specification](./HOW_IT_WORKS.md#step-3-format-your-results)
+[See format specification below](#output-formats)
 
 **Step 4: Score your results**
 ```bash
@@ -530,15 +527,9 @@ See individual component READMEs for detailed development guidelines.
 
 MIT License - see LICENSE file for details
 
-## Documentation Links
+## Support
 
-### Core Documentation
-- 📖 [How It Works](./HOW_IT_WORKS.md) - Complete system overview
-- 🚀 [Quick Start Guide](./QUICK_START.md) - Get started quickly
 - 📊 [Dataset Documentation](./datasets/README.md) - Dataset format and creation
-- 🔧 [Tool Documentation](./TOOLING_README.md) - Detailed tool usage
 - 🧪 [Testing Guide](./tests/) - Running and writing tests
-
-### Support
 - 🐛 [Report Issues](https://github.com/scabench/scabench/issues)
 - 💬 [Discussions](https://github.com/scabench/scabench/discussions)

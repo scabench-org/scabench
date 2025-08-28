@@ -39,11 +39,31 @@ Pre-curated benchmark datasets with real vulnerabilities from audits.
 - [View dataset documentation](./datasets/)
 
 ### 🔧 **Dataset Generator** (`dataset-generator/`)
-Create NEW datasets by scraping audit platforms.
+Create NEW datasets by scraping and curating audit data.
+
+**Step 1: Scrape audit platforms**
 ```bash
 cd dataset-generator
 python scraper.py --platforms code4rena cantina sherlock --months 3
 ```
+
+**Step 2: Curate the dataset**
+```bash
+# Filter projects based on quality criteria
+python curate_dataset.py \
+  --input raw_dataset.json \
+  --output curated_dataset.json \
+  --min-vulnerabilities 5 \
+  --min-high-critical 1
+
+# This filters out projects that:
+# - Have fewer than 5 vulnerabilities
+# - Have no high/critical severity findings
+# - Have inaccessible GitHub repositories
+# - Have invalid or missing data
+```
+
+The curation step ensures high-quality benchmark data by removing low-value or inaccessible projects.
 
 ### 📥 **Source Checkout** (`dataset-generator/checkout_sources.py`)
 Download project source code at EXACT commits from dataset.
@@ -68,9 +88,9 @@ Evaluates ANY tool's findings against the benchmark using LLM matching.
 
 **Important: Model Requirements**
 - The scorer uses batch matching - sends ALL findings to the LLM in a single call
-- Requires a model with **long context window** to handle large projects
+- Requires a model with sufficient context window to handle large projects
 - **Recommended**: `gpt-5-mini` (optimal balance of accuracy and speed)
-- Alternative: `gpt-4o` for very large projects needing longer context
+- **Alternative**: `gpt-4o-mini` (faster, cheaper, good for testing)
 
 #### Scoring a Single Project
 
@@ -223,7 +243,6 @@ Options:
 - **Model selection**:
   - `gpt-5-mini`: Best accuracy (default)
   - `gpt-4o-mini`: Faster, cheaper, good for testing
-  - `gpt-4o`: Use if context window issues occur
 
 **Note**: The default dataset (`curated-2025-08-18.json`) contains 31 projects with 555 total vulnerabilities. Custom datasets may have different counts.
 

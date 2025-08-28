@@ -38,6 +38,62 @@ python curate_dataset.py -i raw_dataset.json -o curated_dataset.json \
 
 ## Component 1: Scraper
 
+The scraper extracts raw audit data from various platforms. For detailed scraper documentation, see the sections below.
+
+## Component 2: Dataset Curator (`curate_dataset.py`)
+
+The curator filters and validates scraped data to ensure high-quality benchmark datasets.
+
+### Curation Features
+
+- **Quality Filtering**: Removes projects with insufficient vulnerabilities
+- **GitHub Validation**: Verifies repository accessibility
+- **Data Enrichment**: Adds metadata and statistics
+- **Report Generation**: Creates detailed markdown reports
+
+### Command Line Usage
+
+```bash
+# Basic usage
+python curate_dataset.py -i raw_dataset.json -o curated_dataset.json
+
+# With custom filtering criteria
+python curate_dataset.py \
+  -i raw_dataset.json \
+  -o curated_dataset.json \
+  --min-vulnerabilities 5 \
+  --min-high-critical 1 \
+  --report curation_report.md
+
+# Parameters:
+#   -i, --input:             Input JSON dataset from scraper
+#   -o, --output:            Output curated JSON file
+#   -r, --report:            Markdown report file (default: curation_report.md)
+#   --min-vulnerabilities:   Min total vulnerabilities required (default: 5)
+#   --min-high-critical:     Min high/critical vulnerabilities (default: 1)
+```
+
+### Curation Criteria
+
+Projects are filtered based on:
+
+1. **Vulnerability Count**: Must have ≥ min-vulnerabilities
+2. **Severity**: Must have ≥ min-high-critical high or critical findings
+3. **Repository Access**: GitHub repo must be accessible
+4. **Data Completeness**: Must have valid vulnerability descriptions
+
+### Output Format
+
+The curator produces:
+- **Curated Dataset**: Filtered JSON with only high-quality projects
+- **Markdown Report**: Statistics about the curation process including:
+  - Projects filtered and reasons
+  - Language distribution
+  - Severity breakdown
+  - Platform statistics
+
+## Component 3: Scraper Details
+
 ### Command Line
 
 ```bash

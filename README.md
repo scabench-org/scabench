@@ -2,11 +2,6 @@
 
 A comprehensive framework for evaluating security analysis tools and AI agents on real-world smart contract vulnerabilities. ScaBench provides curated datasets from recent audits and official tooling for consistent evaluation.
 
-> **🎉 NEW: Run ALL 31 projects with one command!**
-> ```bash
-> ./run_all.sh  # Downloads sources, analyzes, scores, and generates reports
-> ```
-
 ## 📚 Key Documents
 
 - **[HOW IT WORKS](./HOW_IT_WORKS.md)** - Detailed explanation of all components

@@ -1,20 +1,70 @@
+# System files
 .DS_Store
 .python-version
-specs
-issues
-dataset-generator/datasets
-__pycache__
-.pytest_cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
 .claude
 
-# Baseline generator outputs
-baseline-generator/test_session_output/
-baseline-generator/real_test_output/
-baseline-generator/batch_test_output/
-baseline-generator/full_test_output/
-baseline-generator/baseline_results*/
-baseline-generator/.baseline_cache/
-baseline-generator/test_output/
-baseline-generator/comparison_metrics.json
-baseline-generator/test_dataset_small.json
-baseline-generator/models.py
+# ScaBench generated data and results
+sources/
+all_results/
+all_results_*/
+baseline_results/
+baseline_results_*/
+scoring_results/
+scoring_results_*/
+pipeline_results/
+pipeline_results_*/
+all_results_*/
+batch_results/
+batch_results_*/
+test_data/
+test_results/
+
+# Reports and outputs
+*.html
+report.html
+full_report.html
+batch_summary.html
+reports/
+
+# Temporary and cache files
+*.tmp
+*.temp
+*.cache
+.cache/
+tmp/
+temp/
+
+# Log files
+*.log
+logs/
+
+# Dataset generator specific
+dataset-generator/datasets/
+specs/
+issues/
+
+# Summary and score files (keep only in version control if needed)
+summary.json
+baseline_llm_scoring_summary.json
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment files
+.env
+.env.local
+venv/
+env/
+
+# API keys and configs (except examples)
+config.json
+!config.example.json

@@ -1,0 +1,24 @@
+{
+  "baseline_runner": {
+    "model": "gpt-5-mini",
+    "max_files_per_project": 50,
+    "output_dir": "baseline_results",
+    "file_patterns": ["**/*.sol", "**/*.vy"],
+    "exclude_patterns": ["**/test/**", "**/mock/**", "**/node_modules/**"]
+  },
+  "scorer": {
+    "model": "gpt-4o",
+    "strict_matching": true,
+    "confidence_threshold": 1.0,
+    "output_dir": "scoring_results"
+  },
+  "report_generator": {
+    "tool_name": "ScaBench Baseline",
+    "tool_version": "v1.0",
+    "benchmark_version": "ScaBench v1.0",
+    "enable_charts": true
+  },
+  "api_keys": {
+    "openai": "YOUR_OPENAI_API_KEY_HERE"
+  }
+}

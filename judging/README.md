@@ -1,3 +1,0 @@
-# SCABench Judging Component
-
-TODO

@@ -1,0 +1,20 @@
+# ScaBench Official Tooling Requirements
+# Python 3.8+ required
+
+# Core dependencies
+openai>=1.0.0
+rich>=13.0.0
+
+# Optional for visualizations in reports
+matplotlib>=3.5.0
+numpy>=1.21.0
+
+# Testing
+pytest>=7.0.0
+pytest-mock>=3.10.0
+pytest-cov>=4.0.0
+
+# Development
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.0.0

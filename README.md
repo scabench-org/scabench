@@ -145,19 +145,90 @@ export OPENAI_API_KEY="your-key-here"
 ```
 
 ### Option 1: Process ALL Projects (Easiest!) 🚀
+
+The `run_all.sh` script provides a complete end-to-end pipeline that:
+
+1. **Downloads source code** - Clones all project repositories at exact audit commits
+2. **Runs baseline analysis** - Analyzes each project with LLM-based security scanner
+3. **Scores results** - Evaluates findings against known vulnerabilities using strict matching
+4. **Generates reports** - Creates comprehensive HTML report with metrics and visualizations
+
+#### Basic Usage
 ```bash
-# Run everything for ALL 31 projects with one command
+# Run everything with defaults (all projects in dataset, gpt-5-mini model)
 ./run_all.sh
 
-# Or limit files for faster testing
-./run_all.sh --max-files 10
+# Limit files per project for faster testing
+./run_all.sh --max-files 20
+
+# Use different model (e.g., gpt-4o-mini for faster/cheaper runs)
+./run_all.sh --model gpt-4o-mini
+
+# Use a different dataset
+./run_all.sh --dataset datasets/my_custom_dataset.json
+
+# Combine options
+./run_all.sh --model gpt-4o-mini --max-files 10 --output-dir test_run
 ```
 
-This will automatically:
-1. Download all project sources at correct commits
-2. Run baseline analysis on each project
-3. Score all results against the benchmark
-4. Generate comprehensive reports
+#### All Options
+```bash
+./run_all.sh [OPTIONS]
+
+Options:
+  --dataset FILE       Dataset to use (default: datasets/curated-2025-08-18.json)
+  --max-files N        Max files per project (default: analyze all)
+  --model MODEL        Model for analysis (default: gpt-5-mini)
+                       Options: gpt-5-mini, gpt-4o-mini, gpt-4o
+  --output-dir DIR     Output directory (default: all_results_TIMESTAMP)
+  --skip-checkout      Skip source checkout (use existing sources)
+  --skip-baseline      Skip baseline analysis (use existing results)
+  --skip-scoring       Skip scoring and report generation
+  --help               Show help
+```
+
+#### What It Does (Step by Step)
+
+**Step 1: Source Checkout**
+- Downloads all projects from the dataset (from their GitHub repositories)
+- Checks out exact commits from audit time
+- Preserves original project structure
+- Creates: `OUTPUT_DIR/sources/PROJECT_ID/`
+
+**Step 2: Baseline Analysis**
+- Runs LLM-based security analysis on each project
+- Configurable file limits for testing
+- Uses specified model (default: gpt-5-mini)
+- Creates: `OUTPUT_DIR/baseline_results/baseline_PROJECT_ID.json`
+
+**Step 3: Scoring**
+- Compares findings against known vulnerabilities in the dataset
+- Uses EXTREMELY STRICT matching (confidence = 1.0 only)
+- Batch processes all projects
+- Creates: `OUTPUT_DIR/scoring_results/score_PROJECT_ID.json`
+
+**Step 4: Report Generation**
+- Aggregates all scoring results
+- Generates HTML report with charts and metrics
+- Calculates overall detection rates and F1 scores
+- Creates: `OUTPUT_DIR/reports/full_report.html`
+
+**Step 5: Summary Statistics**
+- Computes aggregate metrics across all projects
+- Saves summary JSON with key statistics
+- Creates: `OUTPUT_DIR/summary.json`
+
+#### Performance Notes
+
+- **Full run (all files)**: 4-6 hours for default dataset (31 projects)
+- **Limited run (--max-files 20)**: 1-2 hours
+- **Fast test (--max-files 5 --model gpt-4o-mini)**: 20-30 minutes
+- **Model selection**:
+  - `gpt-5-mini`: Best accuracy (default)
+  - `gpt-4o-mini`: Faster, cheaper, good for testing
+  - `gpt-4o`: Use if context window issues occur
+
+**Note**: The default dataset (`curated-2025-08-18.json`) contains 31 projects with 555 total vulnerabilities. Custom datasets may have different counts.
 
 ### Option 2: Process Single Project
 ```bash

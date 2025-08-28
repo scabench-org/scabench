@@ -28,6 +28,7 @@ NC='\033[0m'
 # Default values
 DATASET="datasets/curated-2025-08-18.json"
 MAX_FILES=""
+MODEL="gpt-5-mini"  # Default model for all operations
 SKIP_CHECKOUT=false
 SKIP_BASELINE=false
 SKIP_SCORING=false
@@ -60,7 +61,9 @@ Usage:
 
 Options:
   --dataset FILE       Dataset to use (default: datasets/curated-2025-08-18.json)
-  --max-files N        Max files per project (default: analyze all)  
+  --max-files N        Max files per project (default: analyze all)
+  --model MODEL        Model to use for analysis (default: gpt-5-mini)
+                       Examples: gpt-5-mini, gpt-4o-mini, gpt-4o
   --skip-checkout      Skip source checkout (use existing sources)
   --skip-baseline      Skip baseline analysis (use existing results)
   --skip-scoring       Skip scoring
@@ -79,6 +82,9 @@ Examples:
 
   # Use custom dataset
   $0 --dataset my_dataset.json
+
+  # Use faster model for testing
+  $0 --model gpt-4o-mini --max-files 20
 
 Environment:
   OPENAI_API_KEY must be set
@@ -102,6 +108,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --max-files)
             MAX_FILES="$2"
+            shift 2
+            ;;
+        --model)
+            MODEL="$2"
             shift 2
             ;;
         --skip-checkout)
@@ -166,6 +176,7 @@ with open('$DATASET', 'r') as f:
 print_header "ScaBench Run All - Processing $PROJECT_COUNT Projects"
 echo "Dataset:          $DATASET"
 echo "Output Directory: $OUTPUT_DIR"
+echo "Model:            $MODEL"
 echo "Max Files:        ${MAX_FILES:-all}"
 echo ""
 echo "Pipeline Steps:"
@@ -222,7 +233,7 @@ with open('$DATASET', 'r') as f:
         CMD="$CMD --project \"$PROJECT_ID\""
         CMD="$CMD --source \"$SOURCE_DIR\""
         CMD="$CMD --output \"$BASELINE_DIR\""
-        CMD="$CMD --model gpt-5-mini"
+        CMD="$CMD --model $MODEL"
         [ -n "$MAX_FILES" ] && CMD="$CMD --max-files $MAX_FILES"
         
         if eval $CMD; then
@@ -247,7 +258,7 @@ if [ "$SKIP_SCORING" = false ]; then
         --benchmark "$DATASET" \
         --results-dir "$BASELINE_DIR" \
         --output "$SCORES_DIR" \
-        --model gpt-5-mini
+        --model $MODEL
     
     print_color $GREEN "✓ Scoring complete"
     
@@ -258,7 +269,7 @@ if [ "$SKIP_SCORING" = false ]; then
         --scores "$SCORES_DIR" \
         --output "${REPORTS_DIR}/full_report.html" \
         --tool-name "ScaBench Baseline" \
-        --model gpt-5-mini
+        --model $MODEL
     
     print_color $GREEN "✓ Report generation complete"
 else

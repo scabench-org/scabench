@@ -48,8 +48,9 @@ class SourceCheckout:
     @staticmethod
     def sanitize_name(name: str) -> str:
         """Sanitize project name for use as directory name."""
-        # Replace problematic characters
-        invalid_chars = ['/', '\\', ':', '*', '?', '"', '<', '>', '|', ' ', '.', '-']
+        # Replace only truly problematic characters for filesystems
+        # Note: hyphens and dots are perfectly safe and should be preserved
+        invalid_chars = ['/', '\\', ':', '*', '?', '"', '<', '>', '|', ' ']
         sanitized = name
         for char in invalid_chars:
             sanitized = sanitized.replace(char, '_')
@@ -257,7 +258,8 @@ class SourceCheckout:
                     
                     # Create target directory name
                     repo_name = repo_url.split("/")[-1].replace(".git", "")
-                    dir_name = f"{self.sanitize_name(project_id)}"
+                    # Use project_id exactly as-is to maintain consistency
+                    dir_name = project_id
                     if len(codebases) > 1:
                         # Add repo name if multiple codebases
                         dir_name = f"{dir_name}_{self.sanitize_name(repo_name)}"

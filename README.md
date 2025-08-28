@@ -448,10 +448,6 @@ cd scabench
 # Install all dependencies
 pip install -r requirements.txt
 
-# Set up configuration (optional)
-cp config.example.json config.json
-# Edit config.json with your preferences
-
 # Run tests to verify installation
 pytest tests/
 ```

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-ScaBench Report Generator
-Generate comprehensive HTML reports from scoring results with visualizations.
+ScaBench Report Generator - Enhanced Beautiful Version
+Generate comprehensive HTML reports with advanced navigation, collapsible sections, and beautiful styling.
 """
 
 import json
@@ -30,11 +30,10 @@ try:
 except ImportError:
     HAS_MATPLOTLIB = False
     console.print("[yellow]Warning: matplotlib not installed. Charts will be disabled.[/yellow]")
-    console.print("[dim]Install with: pip install matplotlib[/dim]")
 
 
 class ReportGenerator:
-    """Generate HTML reports from ScaBench scoring results."""
+    """Generate beautiful HTML reports from ScaBench scoring results."""
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the report generator."""
@@ -43,105 +42,74 @@ class ReportGenerator:
             'tool_name': self.config.get('tool_name', 'Baseline Analyzer'),
             'tool_version': self.config.get('tool_version', 'v1.0'),
             'model': self.config.get('model', 'Not specified'),
-            'scan_date': self.config.get('scan_date', datetime.now().strftime('%Y-%m-%d')),
+            'scan_date': self.config.get('scan_date', datetime.now().strftime('%Y-%m-%d %H:%M:%S')),
             'benchmark_version': self.config.get('benchmark_version', 'ScaBench v1.0'),
             'notes': self.config.get('notes', ''),
         }
     
-    def _generate_chart_base64(self, data: Dict[str, Any], chart_type: str) -> str:
-        """Generate a chart and return as base64 encoded string."""
-        if not HAS_MATPLOTLIB:
-            return ""
+    def _generate_mini_charts(self, data: Dict[str, Any]) -> Dict[str, str]:
+        """Generate compact inline SVG charts."""
+        charts = {}
         
-        try:
-            fig, ax = plt.subplots(figsize=(10, 6))
-            
-            if chart_type == 'detection_by_project':
-                projects = [r['project'][:20] for r in data['projects']]
-                detection_rates = [r['detection_rate'] * 100 for r in data['projects']]
-                
-                ax.barh(projects, detection_rates, color='steelblue')
-                ax.set_xlabel('Detection Rate (%)')
-                ax.set_title('Detection Rate by Project')
-                ax.set_xlim(0, 100)
-                
-            elif chart_type == 'severity_distribution':
-                severities = ['Critical', 'High', 'Medium', 'Low']
-                expected = []
-                found = []
-                
-                for sev in ['critical', 'high', 'medium', 'low']:
-                    exp_count = data['severity_stats'].get(sev, {}).get('expected', 0)
-                    found_count = data['severity_stats'].get(sev, {}).get('found', 0)
-                    expected.append(exp_count)
-                    found.append(found_count)
-                
-                x = np.arange(len(severities))
-                width = 0.35
-                
-                ax.bar(x - width/2, expected, width, label='Expected', color='lightcoral')
-                ax.bar(x + width/2, found, width, label='Found', color='lightgreen')
-                ax.set_xlabel('Severity')
-                ax.set_ylabel('Count')
-                ax.set_title('Vulnerabilities by Severity')
-                ax.set_xticks(x)
-                ax.set_xticklabels(severities)
-                ax.legend()
-            
-            elif chart_type == 'overall_metrics':
-                metrics = ['Detection Rate', 'Precision', 'F1 Score']
-                values = [
-                    data['overall_stats']['detection_rate'],
-                    data['overall_stats']['precision'],
-                    data['overall_stats']['f1_score']
-                ]
-                
-                ax.bar(metrics, values, color=['green', 'blue', 'purple'])
-                ax.set_ylabel('Percentage')
-                ax.set_title('Overall Performance Metrics')
-                ax.set_ylim(0, 100)
-                
-                # Add value labels on bars
-                for i, v in enumerate(values):
-                    ax.text(i, v + 1, f'{v:.1f}%', ha='center')
-            
-            # Convert to base64
-            buffer = BytesIO()
-            plt.tight_layout()
-            plt.savefig(buffer, format='png', dpi=100)
-            buffer.seek(0)
-            image_base64 = base64.b64encode(buffer.read()).decode('utf-8')
-            plt.close()
-            
-            return f"data:image/png;base64,{image_base64}"
-            
-        except Exception as e:
-            console.print(f"[yellow]Warning: Could not generate chart: {e}[/yellow]")
-            return ""
+        # Detection rate pie chart
+        detection_rate = data['overall_stats']['detection_rate']
+        charts['detection_pie'] = f"""
+        <svg viewBox="0 0 36 36" class="circular-chart">
+            <path class="circle-bg" d="M18 2.0845
+                a 15.9155 15.9155 0 0 1 0 31.831
+                a 15.9155 15.9155 0 0 1 0 -31.831" />
+            <path class="circle" stroke-dasharray="{detection_rate}, 100" d="M18 2.0845
+                a 15.9155 15.9155 0 0 1 0 31.831
+                a 15.9155 15.9155 0 0 1 0 -31.831" />
+            <text x="18" y="21" class="percentage">{detection_rate:.1f}%</text>
+        </svg>
+        """
+        
+        # Severity distribution bar chart
+        severity_data = data['severity_stats']
+        max_val = max([severity_data.get(s, {}).get('expected', 0) 
+                      for s in ['critical', 'high', 'medium', 'low']] + [1])
+        
+        charts['severity_bars'] = """<div class="mini-bar-chart">"""
+        for sev, color in [('critical', '#e74c3c'), ('high', '#f39c12'), 
+                          ('medium', '#3498db'), ('low', '#95a5a6')]:
+            val = severity_data.get(sev, {}).get('expected', 0)
+            height = (val / max_val * 100) if max_val > 0 else 0
+            charts['severity_bars'] += f"""
+            <div class="bar-wrapper">
+                <div class="bar" style="height: {height}%; background: {color};">
+                    <span class="bar-value">{val}</span>
+                </div>
+                <div class="bar-label">{sev[0].upper()}</div>
+            </div>
+            """
+        charts['severity_bars'] += "</div>"
+        
+        return charts
     
     def _format_dismissal_reasons(self, reasons: List[str]) -> str:
-        """Format dismissal reasons as HTML badges."""
+        """Format dismissal reasons as styled badges."""
         if not reasons:
             return ''
         
         reason_map = {
-            'different_root_cause': 'Different Root Cause',
-            'different_location': 'Wrong Location',
-            'different_function': 'Wrong Function',
-            'different_contract': 'Wrong Contract',
-            'different_variable': 'Wrong Variables',
-            'wrong_attack_vector': 'Wrong Attack Vector',
-            'different_impact': 'Different Impact',
-            'missing_identifiers': 'Missing Identifiers',
-            'general_description': 'Too Vague',
-            'not_found': 'Not Found',
-            'matching_error': 'Matching Error'
+            'different_root_cause': ('Different Root Cause', 'critical'),
+            'different_location': ('Wrong Location', 'high'),
+            'different_function': ('Wrong Function', 'high'),
+            'different_contract': ('Wrong Contract', 'high'),
+            'different_variable': ('Wrong Variables', 'medium'),
+            'wrong_attack_vector': ('Wrong Attack Vector', 'critical'),
+            'different_impact': ('Different Impact', 'medium'),
+            'missing_identifiers': ('Missing Identifiers', 'low'),
+            'general_description': ('Too Vague', 'low'),
+            'not_found': ('Not Found', 'critical'),
+            'matching_error': ('Matching Error', 'low')
         }
         
         badges_html = '<div class="dismissal-reasons">'
         for reason in reasons:
-            label = reason_map.get(reason, reason)
-            badges_html += f'<span class="dismissal-badge">{label}</span>'
+            label, severity = reason_map.get(reason, (reason, 'low'))
+            badges_html += f'<span class="badge badge-{severity}">{label}</span>'
         badges_html += '</div>'
         return badges_html
     
@@ -149,17 +117,8 @@ class ReportGenerator:
                        scores_dir: Path,
                        benchmark_file: Optional[Path] = None,
                        output_file: Path = Path("report.html")) -> Path:
-        """Generate HTML report from scoring results.
-        
-        Args:
-            scores_dir: Directory containing score_*.json files
-            benchmark_file: Optional path to benchmark dataset
-            output_file: Output HTML file path
-            
-        Returns:
-            Path to generated HTML report
-        """
-        console.print("[cyan]Generating ScaBench report...[/cyan]")
+        """Generate beautiful HTML report from scoring results."""
+        console.print("[cyan]Generating Enhanced ScaBench Report...[/cyan]")
         
         # Load all scoring results
         score_files = list(scores_dir.glob("score_*.json"))
@@ -168,7 +127,7 @@ class ReportGenerator:
             sys.exit(1)
         
         all_scores = []
-        for score_file in score_files:
+        for score_file in sorted(score_files):
             with open(score_file, 'r') as f:
                 all_scores.append(json.load(f))
         
@@ -181,7 +140,7 @@ class ReportGenerator:
         total_potential = sum(len(s.get('potential_matches', [])) for s in all_scores)
         
         overall_detection = (total_tp / total_expected * 100) if total_expected > 0 else 0
-        overall_precision = (total_tp / total_found * 100) if total_found > 0 else 0
+        overall_precision = (total_tp / (total_tp + total_fp) * 100) if (total_tp + total_fp) > 0 else 0
         overall_f1 = (2 * overall_precision * overall_detection / 
                      (overall_precision + overall_detection)) if (overall_precision + overall_detection) > 0 else 0
         
@@ -189,14 +148,14 @@ class ReportGenerator:
         severity_stats = defaultdict(lambda: {'expected': 0, 'found': 0})
         for score in all_scores:
             for miss in score.get('missed_findings', []):
-                severity = miss.get('severity', 'unknown')
+                severity = miss.get('severity', 'unknown').lower()
                 severity_stats[severity]['expected'] += 1
             for match in score.get('matched_findings', []):
-                severity = match.get('severity', 'unknown')
+                severity = match.get('severity', 'unknown').lower()
                 severity_stats[severity]['found'] += 1
                 severity_stats[severity]['expected'] += 1
         
-        # Prepare data for charts
+        # Prepare chart data
         chart_data = {
             'projects': [{'project': s['project'], 
                          'detection_rate': s['detection_rate']} 
@@ -209,10 +168,8 @@ class ReportGenerator:
             }
         }
         
-        # Generate charts
-        chart_detection = self._generate_chart_base64(chart_data, 'detection_by_project')
-        chart_severity = self._generate_chart_base64(chart_data, 'severity_distribution')
-        chart_metrics = self._generate_chart_base64(chart_data, 'overall_metrics')
+        # Generate mini charts
+        charts = self._generate_mini_charts(chart_data)
         
         # Generate HTML
         html_content = self._generate_html(
@@ -230,582 +187,1069 @@ class ReportGenerator:
                 'overall_f1': overall_f1,
                 'severity_stats': dict(severity_stats)
             },
-            {
-                'detection': chart_detection,
-                'severity': chart_severity,
-                'metrics': chart_metrics
-            }
+            charts
         )
         
         # Write HTML file
         with open(output_file, 'w', encoding='utf-8') as f:
             f.write(html_content)
         
-        console.print(f"[green]Report generated: {output_file}[/green]")
+        console.print(f"[green]✨ Beautiful report generated: {output_file}[/green]")
         return output_file
     
     def _generate_html(self, scores: List[Dict], stats: Dict, charts: Dict) -> str:
-        """Generate the HTML content."""
+        """Generate the beautiful HTML content."""
         
-        # CSS styles
+        # Modern, beautiful CSS with animations and gradients
         css = """
         <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+            
+            * { 
+                margin: 0; 
+                padding: 0; 
+                box-sizing: border-box; 
+            }
+            
+            :root {
+                --primary: #6366f1;
+                --primary-dark: #4f46e5;
+                --secondary: #8b5cf6;
+                --success: #10b981;
+                --warning: #f59e0b;
+                --danger: #ef4444;
+                --dark: #1f2937;
+                --light: #f9fafb;
+                --border: #e5e7eb;
+            }
+            
             body {
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
                 line-height: 1.6;
-                color: #333;
+                color: var(--dark);
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 min-height: 100vh;
-                padding: 20px;
+                padding: 0;
+                margin: 0;
             }
-            .container {
+            
+            /* Navigation */
+            .nav-container {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                background: rgba(255, 255, 255, 0.95);
+                backdrop-filter: blur(10px);
+                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                z-index: 1000;
+                transition: all 0.3s ease;
+            }
+            
+            .nav {
                 max-width: 1400px;
                 margin: 0 auto;
+                padding: 1rem 2rem;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            
+            .nav-title {
+                font-size: 1.25rem;
+                font-weight: 600;
+                background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }
+            
+            .nav-links {
+                display: flex;
+                gap: 2rem;
+                list-style: none;
+            }
+            
+            .nav-links a {
+                color: var(--dark);
+                text-decoration: none;
+                font-weight: 500;
+                transition: color 0.3s ease;
+                position: relative;
+            }
+            
+            .nav-links a:hover {
+                color: var(--primary);
+            }
+            
+            .nav-links a::after {
+                content: '';
+                position: absolute;
+                bottom: -5px;
+                left: 0;
+                width: 0;
+                height: 2px;
+                background: var(--primary);
+                transition: width 0.3s ease;
+            }
+            
+            .nav-links a:hover::after {
+                width: 100%;
+            }
+            
+            /* Main Container */
+            .container {
+                max-width: 1400px;
+                margin: 80px auto 40px;
+                padding: 0 20px;
+            }
+            
+            /* Hero Section */
+            .hero {
                 background: white;
-                border-radius: 12px;
+                border-radius: 20px;
+                padding: 3rem;
+                margin-bottom: 2rem;
                 box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+                position: relative;
                 overflow: hidden;
             }
-            .header {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                padding: 40px;
-                text-align: center;
+            
+            .hero::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 5px;
+                background: linear-gradient(90deg, var(--primary) 0%, var(--secondary) 100%);
             }
-            .header h1 {
-                font-size: 2.5em;
-                margin-bottom: 10px;
-                text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+            
+            .hero h1 {
+                font-size: 3rem;
+                font-weight: 700;
+                margin-bottom: 1rem;
+                background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
             }
-            .header .subtitle {
-                font-size: 1.2em;
-                opacity: 0.95;
-            }
-            .content {
-                padding: 40px;
-            }
-            .metric-grid {
+            
+            .scan-info {
                 display: grid;
                 grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                gap: 20px;
-                margin: 30px 0;
+                gap: 1rem;
+                margin-top: 2rem;
+                padding-top: 2rem;
+                border-top: 1px solid var(--border);
             }
+            
+            .scan-info-item {
+                display: flex;
+                flex-direction: column;
+            }
+            
+            .scan-info-label {
+                font-size: 0.875rem;
+                color: #6b7280;
+                margin-bottom: 0.25rem;
+            }
+            
+            .scan-info-value {
+                font-weight: 600;
+                color: var(--dark);
+            }
+            
+            /* Metrics Dashboard */
+            .metrics-dashboard {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                gap: 1.5rem;
+                margin-bottom: 2rem;
+            }
+            
             .metric-card {
-                background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-                padding: 25px;
-                border-radius: 12px;
-                text-align: center;
+                background: white;
+                border-radius: 16px;
+                padding: 1.5rem;
                 box-shadow: 0 4px 6px rgba(0,0,0,0.07);
-                transition: transform 0.2s;
+                position: relative;
+                transition: all 0.3s ease;
+                cursor: pointer;
             }
+            
             .metric-card:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 6px 12px rgba(0,0,0,0.1);
+                transform: translateY(-4px);
+                box-shadow: 0 12px 24px rgba(0,0,0,0.15);
             }
-            .metric-card .value {
-                font-size: 2.5em;
-                font-weight: bold;
-                margin: 10px 0;
+            
+            .metric-card.primary {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
             }
-            .metric-card .label {
-                color: #666;
-                font-size: 0.9em;
+            
+            .metric-card.success {
+                background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+                color: white;
+            }
+            
+            .metric-card.warning {
+                background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+                color: white;
+            }
+            
+            .metric-card.danger {
+                background: linear-gradient(135deg, #f87171 0%, #ef4444 100%);
+                color: white;
+            }
+            
+            .metric-icon {
+                position: absolute;
+                top: 1.5rem;
+                right: 1.5rem;
+                font-size: 2rem;
+                opacity: 0.3;
+            }
+            
+            .metric-value {
+                font-size: 2.5rem;
+                font-weight: 700;
+                margin: 0.5rem 0;
+            }
+            
+            .metric-label {
+                font-size: 0.875rem;
+                opacity: 0.9;
                 text-transform: uppercase;
                 letter-spacing: 1px;
             }
-            .metric-card.success { background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%); }
-            .metric-card.warning { background: linear-gradient(135deg, #ffeaa7 0%, #fdcb6e 100%); }
-            .metric-card.danger { background: linear-gradient(135deg, #fd79a8 0%, #fdcb6e 100%); }
-            .metric-card.info { background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); }
             
-            .section {
-                margin: 40px 0;
-                background: #f8f9fa;
-                border-radius: 8px;
-                padding: 30px;
+            .metric-trend {
+                margin-top: 0.5rem;
+                font-size: 0.875rem;
+                opacity: 0.8;
             }
-            .section h2 {
-                color: #667eea;
-                margin-bottom: 20px;
-                padding-bottom: 10px;
-                border-bottom: 2px solid #667eea;
+            
+            /* Charts Section */
+            .charts-section {
+                background: white;
+                border-radius: 16px;
+                padding: 2rem;
+                margin-bottom: 2rem;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.07);
             }
-            table {
+            
+            .charts-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                gap: 2rem;
+                margin-top: 1.5rem;
+            }
+            
+            .chart-container {
+                text-align: center;
+            }
+            
+            .chart-title {
+                font-weight: 600;
+                margin-bottom: 1rem;
+                color: var(--dark);
+            }
+            
+            /* Mini Charts */
+            .circular-chart {
+                width: 120px;
+                height: 120px;
+            }
+            
+            .circle-bg {
+                fill: none;
+                stroke: #eee;
+                stroke-width: 3.8;
+            }
+            
+            .circle {
+                fill: none;
+                stroke: url(#gradient);
+                stroke-width: 3.8;
+                stroke-linecap: round;
+                transform: rotate(-90deg);
+                transform-origin: center;
+                animation: progress 1s ease-out forwards;
+            }
+            
+            .percentage {
+                fill: var(--dark);
+                font-size: 0.5em;
+                text-anchor: middle;
+                font-weight: 700;
+            }
+            
+            .mini-bar-chart {
+                display: flex;
+                justify-content: space-around;
+                align-items: flex-end;
+                height: 120px;
+                padding: 10px;
+                gap: 10px;
+            }
+            
+            .bar-wrapper {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: flex-end;
+            }
+            
+            .bar {
                 width: 100%;
-                border-collapse: collapse;
-                margin: 20px 0;
+                border-radius: 4px 4px 0 0;
+                position: relative;
+                transition: all 0.3s ease;
+                display: flex;
+                align-items: flex-start;
+                justify-content: center;
+                padding-top: 5px;
+                animation: grow 0.8s ease-out;
+            }
+            
+            .bar:hover {
+                opacity: 0.8;
+            }
+            
+            .bar-value {
+                color: white;
+                font-weight: 600;
+                font-size: 0.875rem;
+            }
+            
+            .bar-label {
+                margin-top: 5px;
+                font-size: 0.75rem;
+                font-weight: 600;
+                color: var(--dark);
+            }
+            
+            /* Projects Section */
+            .projects-section {
+                background: white;
+                border-radius: 16px;
+                padding: 2rem;
+                margin-bottom: 2rem;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.07);
+            }
+            
+            .section-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 1.5rem;
+                padding-bottom: 1rem;
+                border-bottom: 2px solid var(--border);
+            }
+            
+            .section-title {
+                font-size: 1.5rem;
+                font-weight: 700;
+                color: var(--dark);
+            }
+            
+            .filter-buttons {
+                display: flex;
+                gap: 0.5rem;
+            }
+            
+            .filter-btn {
+                padding: 0.5rem 1rem;
+                border: 2px solid var(--border);
                 background: white;
                 border-radius: 8px;
-                overflow: hidden;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.3s ease;
             }
-            th {
-                background: #667eea;
+            
+            .filter-btn:hover {
+                border-color: var(--primary);
+                color: var(--primary);
+            }
+            
+            .filter-btn.active {
+                background: var(--primary);
                 color: white;
-                padding: 15px;
-                text-align: left;
+                border-color: var(--primary);
+            }
+            
+            /* Project Cards */
+            .project-card {
+                background: var(--light);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                margin-bottom: 1rem;
+                overflow: hidden;
+                transition: all 0.3s ease;
+            }
+            
+            .project-card:hover {
+                box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            }
+            
+            .project-header {
+                padding: 1.25rem;
+                background: white;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                cursor: pointer;
+                user-select: none;
+            }
+            
+            .project-header:hover {
+                background: var(--light);
+            }
+            
+            .project-name {
+                font-weight: 600;
+                font-size: 1.1rem;
+                color: var(--dark);
+            }
+            
+            .project-stats {
+                display: flex;
+                gap: 1.5rem;
+                align-items: center;
+            }
+            
+            .stat-item {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .stat-value {
+                font-weight: 700;
+                font-size: 1.25rem;
+            }
+            
+            .stat-label {
+                font-size: 0.75rem;
+                color: #6b7280;
+                text-transform: uppercase;
+            }
+            
+            .expand-icon {
+                font-size: 1.25rem;
+                transition: transform 0.3s ease;
+            }
+            
+            .project-card.expanded .expand-icon {
+                transform: rotate(180deg);
+            }
+            
+            .project-details {
+                max-height: 0;
+                overflow: hidden;
+                transition: max-height 0.3s ease;
+            }
+            
+            .project-card.expanded .project-details {
+                max-height: 2000px;
+            }
+            
+            .details-content {
+                padding: 1.5rem;
+                border-top: 1px solid var(--border);
+            }
+            
+            /* Findings Tabs */
+            .tabs {
+                display: flex;
+                gap: 0.5rem;
+                margin-bottom: 1.5rem;
+                border-bottom: 2px solid var(--border);
+            }
+            
+            .tab {
+                padding: 0.75rem 1.5rem;
+                background: none;
+                border: none;
+                font-weight: 500;
+                color: #6b7280;
+                cursor: pointer;
+                position: relative;
+                transition: all 0.3s ease;
+            }
+            
+            .tab:hover {
+                color: var(--primary);
+            }
+            
+            .tab.active {
+                color: var(--primary);
+            }
+            
+            .tab.active::after {
+                content: '';
+                position: absolute;
+                bottom: -2px;
+                left: 0;
+                right: 0;
+                height: 2px;
+                background: var(--primary);
+            }
+            
+            .tab-badge {
+                display: inline-block;
+                margin-left: 0.5rem;
+                padding: 0.125rem 0.5rem;
+                background: var(--primary);
+                color: white;
+                border-radius: 12px;
+                font-size: 0.75rem;
                 font-weight: 600;
             }
-            td {
-                padding: 12px 15px;
-                border-bottom: 1px solid #e9ecef;
+            
+            .tab-content {
+                display: none;
             }
-            tr:last-child td {
-                border-bottom: none;
+            
+            .tab-content.active {
+                display: block;
+                animation: fadeIn 0.3s ease;
             }
-            tr:hover {
-                background: #f8f9fa;
+            
+            /* Finding Cards */
+            .finding-card {
+                background: white;
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                padding: 1rem;
+                margin-bottom: 1rem;
+                transition: all 0.3s ease;
             }
+            
+            .finding-card:hover {
+                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            }
+            
+            .finding-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                margin-bottom: 0.75rem;
+            }
+            
+            .finding-title {
+                font-weight: 600;
+                color: var(--dark);
+                flex: 1;
+                margin-right: 1rem;
+            }
+            
             .severity-badge {
-                display: inline-block;
-                padding: 4px 12px;
-                border-radius: 20px;
-                font-size: 0.85em;
+                padding: 0.25rem 0.75rem;
+                border-radius: 6px;
+                font-size: 0.75rem;
                 font-weight: 600;
                 text-transform: uppercase;
             }
-            .severity-critical { background: #dc3545; color: white; }
-            .severity-high { background: #fd7e14; color: white; }
-            .severity-medium { background: #ffc107; color: #333; }
-            .severity-low { background: #28a745; color: white; }
-            .severity-unknown { background: #6c757d; color: white; }
             
-            .dismissal-badge {
-                display: inline-block;
-                padding: 3px 8px;
-                margin: 2px;
-                border-radius: 12px;
-                font-size: 0.75em;
-                background: #e9ecef;
-                color: #495057;
-            }
-            .confidence-high { color: #28a745; font-weight: bold; }
-            .confidence-medium { color: #ffc107; font-weight: bold; }
-            .confidence-low { color: #dc3545; font-weight: bold; }
-            
-            .chart-container {
-                margin: 30px 0;
-                text-align: center;
-                background: white;
-                padding: 20px;
-                border-radius: 8px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            }
-            .chart-container img {
-                max-width: 100%;
-                height: auto;
+            .severity-critical {
+                background: #fee2e2;
+                color: #dc2626;
             }
             
-            .finding-card {
-                background: white;
-                border-left: 4px solid #667eea;
-                padding: 20px;
-                margin: 15px 0;
-                border-radius: 8px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            .severity-high {
+                background: #fed7aa;
+                color: #ea580c;
             }
-            .finding-card.matched {
-                border-left-color: #28a745;
+            
+            .severity-medium {
+                background: #fef3c7;
+                color: #d97706;
             }
-            .finding-card.potential {
-                border-left-color: #ffc107;
+            
+            .severity-low {
+                background: #dbeafe;
+                color: #2563eb;
             }
-            .finding-card.missed {
-                border-left-color: #dc3545;
-            }
-            .finding-title {
-                font-weight: bold;
-                color: #333;
-                margin-bottom: 10px;
-            }
-            .finding-details {
-                color: #666;
-                font-size: 0.9em;
-            }
-            .justification {
-                background: #f8f9fa;
-                padding: 10px;
+            
+            .justification-box {
+                background: var(--light);
+                border-left: 4px solid var(--primary);
+                padding: 0.75rem 1rem;
+                margin-top: 0.75rem;
                 border-radius: 4px;
-                margin-top: 10px;
-                font-style: italic;
+                font-size: 0.9rem;
+                line-height: 1.6;
+                color: #4b5563;
             }
             
-            .info-panel {
-                background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-                padding: 20px;
-                border-radius: 8px;
-                margin: 20px 0;
-            }
-            .info-panel h3 {
-                color: #667eea;
-                margin-bottom: 10px;
-            }
-            .info-item {
-                margin: 5px 0;
-            }
-            .info-label {
+            .confidence-indicator {
+                display: inline-block;
+                margin-left: 0.5rem;
+                padding: 0.125rem 0.5rem;
+                background: var(--success);
+                color: white;
+                border-radius: 4px;
+                font-size: 0.75rem;
                 font-weight: 600;
-                color: #495057;
             }
             
-            .footer {
-                background: #f8f9fa;
-                padding: 30px;
-                text-align: center;
-                color: #6c757d;
-                border-top: 1px solid #dee2e6;
-            }
-            .footer a {
-                color: #667eea;
-                text-decoration: none;
-            }
-            .footer a:hover {
-                text-decoration: underline;
+            .dismissal-reasons {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.5rem;
+                margin-top: 0.75rem;
             }
             
+            .badge {
+                padding: 0.25rem 0.75rem;
+                border-radius: 6px;
+                font-size: 0.75rem;
+                font-weight: 500;
+            }
+            
+            .badge-critical {
+                background: #fee2e2;
+                color: #dc2626;
+            }
+            
+            .badge-high {
+                background: #fed7aa;
+                color: #ea580c;
+            }
+            
+            .badge-medium {
+                background: #fef3c7;
+                color: #d97706;
+            }
+            
+            .badge-low {
+                background: #e0e7ff;
+                color: #4338ca;
+            }
+            
+            /* Animations */
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(10px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            
+            @keyframes grow {
+                from { height: 0; }
+                to { height: auto; }
+            }
+            
+            @keyframes progress {
+                from { stroke-dasharray: 0 100; }
+            }
+            
+            /* Responsive */
             @media (max-width: 768px) {
-                .metric-grid {
+                .nav-links {
+                    display: none;
+                }
+                
+                .hero h1 {
+                    font-size: 2rem;
+                }
+                
+                .metrics-dashboard {
                     grid-template-columns: 1fr;
                 }
-                .header h1 {
-                    font-size: 1.8em;
+                
+                .project-stats {
+                    flex-direction: column;
+                    gap: 0.5rem;
                 }
-                .content {
-                    padding: 20px;
+            }
+            
+            /* Print Styles */
+            @media print {
+                .nav-container {
+                    position: relative;
                 }
-                table {
-                    font-size: 0.9em;
+                
+                .filter-buttons,
+                .expand-icon {
+                    display: none;
+                }
+                
+                .project-details {
+                    max-height: none !important;
                 }
             }
         </style>
         """
         
-        # Build HTML
-        html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ScaBench Security Analysis Report</title>
-    {css}
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>ScaBench Security Analysis Report</h1>
-            <div class="subtitle">
-                {self.scan_info['tool_name']} {self.scan_info['tool_version']} | 
-                Model: {self.scan_info['model']} | 
-                {self.scan_info['scan_date']}
-            </div>
-        </div>
-        
-        <div class="content">
-            <!-- Overall Metrics -->
-            <div class="metric-grid">
-                <div class="metric-card info">
-                    <div class="label">Projects Analyzed</div>
-                    <div class="value">{stats['total_projects']}</div>
-                </div>
-                <div class="metric-card">
-                    <div class="label">Expected Vulnerabilities</div>
-                    <div class="value">{stats['total_expected']}</div>
-                </div>
-                <div class="metric-card success">
-                    <div class="label">True Positives</div>
-                    <div class="value">{stats['total_tp']}</div>
-                </div>
-                <div class="metric-card danger">
-                    <div class="label">False Negatives</div>
-                    <div class="value">{stats['total_fn']}</div>
-                </div>
-                <div class="metric-card warning">
-                    <div class="label">False Positives</div>
-                    <div class="value">{stats['total_fp']}</div>
-                </div>
-                <div class="metric-card info">
-                    <div class="label">Potential Matches</div>
-                    <div class="value">{stats['total_potential']}</div>
-                </div>
-            </div>
+        # JavaScript for interactivity
+        javascript = """
+        <script>
+            // Toggle project details
+            function toggleProject(element) {
+                const card = element.closest('.project-card');
+                card.classList.toggle('expanded');
+            }
             
-            <!-- Performance Metrics -->
-            <div class="section">
-                <h2>Performance Metrics</h2>
-                <div class="metric-grid">
-                    <div class="metric-card">
-                        <div class="label">Detection Rate</div>
-                        <div class="value {'confidence-high' if stats['overall_detection'] > 50 else 'confidence-medium' if stats['overall_detection'] > 25 else 'confidence-low'}">
-                            {stats['overall_detection']:.1f}%
+            // Tab switching
+            function switchTab(projectId, tabName) {
+                const project = document.getElementById(projectId);
+                
+                // Update tab styles
+                project.querySelectorAll('.tab').forEach(tab => {
+                    tab.classList.remove('active');
+                });
+                event.target.classList.add('active');
+                
+                // Update content
+                project.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+                project.querySelector(`.tab-content[data-tab="${tabName}"]`).classList.add('active');
+            }
+            
+            // Filter projects
+            function filterProjects(filter) {
+                const cards = document.querySelectorAll('.project-card');
+                
+                // Update button styles
+                document.querySelectorAll('.filter-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                event.target.classList.add('active');
+                
+                // Filter cards
+                cards.forEach(card => {
+                    if (filter === 'all') {
+                        card.style.display = 'block';
+                    } else if (filter === 'detected') {
+                        const rate = parseFloat(card.dataset.detectionRate);
+                        card.style.display = rate > 0 ? 'block' : 'none';
+                    } else if (filter === 'missed') {
+                        const rate = parseFloat(card.dataset.detectionRate);
+                        card.style.display = rate === 0 ? 'block' : 'none';
+                    }
+                });
+            }
+            
+            // Smooth scroll for navigation
+            document.addEventListener('DOMContentLoaded', function() {
+                document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+                    anchor.addEventListener('click', function (e) {
+                        e.preventDefault();
+                        const target = document.querySelector(this.getAttribute('href'));
+                        if (target) {
+                            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                    });
+                });
+            });
+            
+            // Sticky navigation on scroll
+            window.addEventListener('scroll', function() {
+                const nav = document.querySelector('.nav-container');
+                if (window.scrollY > 100) {
+                    nav.style.boxShadow = '0 4px 20px rgba(0,0,0,0.1)';
+                } else {
+                    nav.style.boxShadow = '0 2px 10px rgba(0,0,0,0.1)';
+                }
+            });
+        </script>
+        """
+        
+        # Build HTML content
+        html_parts = [
+            '<!DOCTYPE html>',
+            '<html lang="en">',
+            '<head>',
+            '<meta charset="UTF-8">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
+            '<title>Security Tool Benchmark Report - ScaBench</title>',
+            css,
+            '</head>',
+            '<body>',
+            
+            # SVG Gradient Definition
+            '''<svg style="display: none;">
+                <defs>
+                    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+                        <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+                    </linearGradient>
+                </defs>
+            </svg>''',
+            
+            # Navigation
+            '<div class="nav-container">',
+            '<nav class="nav">',
+            '<div class="nav-title">🎯 Security Benchmark</div>',
+            '<ul class="nav-links">',
+            '<li><a href="#overview">Overview</a></li>',
+            '<li><a href="#metrics">Metrics</a></li>',
+            '<li><a href="#projects">Projects</a></li>',
+            '<li><a href="#charts">Analysis</a></li>',
+            '</ul>',
+            '</nav>',
+            '</div>',
+            
+            # Container
+            '<div class="container">',
+            
+            # Hero Section
+            '<section id="overview" class="hero">',
+            '<h1>Security Tool Benchmark Report</h1>',
+            '<p style="font-size: 1.1rem; color: #6b7280; margin-bottom: 2rem;">',
+            f'Comprehensive benchmark evaluation across {stats["total_projects"]} projects with {stats["total_expected"]} known vulnerabilities',
+            '</p>',
+            '<div class="scan-info">',
+            f'<div class="scan-info-item"><span class="scan-info-label">Tool</span><span class="scan-info-value">{self.scan_info["tool_name"]}</span></div>',
+            f'<div class="scan-info-item"><span class="scan-info-label">Model</span><span class="scan-info-value">{self.scan_info["model"]}</span></div>',
+            f'<div class="scan-info-item"><span class="scan-info-label">Date</span><span class="scan-info-value">{self.scan_info["scan_date"]}</span></div>',
+            f'<div class="scan-info-item"><span class="scan-info-label">Benchmark</span><span class="scan-info-value">{self.scan_info["benchmark_version"]}</span></div>',
+            '</div>',
+            '</section>',
+            
+            # Metrics Dashboard
+            '<section id="metrics" class="metrics-dashboard">',
+            f'''<div class="metric-card primary">
+                <div class="metric-icon">📊</div>
+                <div class="metric-value">{stats["total_projects"]}</div>
+                <div class="metric-label">Projects Analyzed</div>
+                <div class="metric-trend">Full benchmark coverage</div>
+            </div>''',
+            f'''<div class="metric-card">
+                <div class="metric-icon">🎯</div>
+                <div class="metric-value">{stats["total_expected"]}</div>
+                <div class="metric-label">Expected Vulnerabilities</div>
+                <div class="metric-trend">From benchmark dataset</div>
+            </div>''',
+            f'''<div class="metric-card success">
+                <div class="metric-icon">✅</div>
+                <div class="metric-value">{stats["total_tp"]}</div>
+                <div class="metric-label">True Positives</div>
+                <div class="metric-trend">{stats["overall_detection"]:.1f}% detection rate</div>
+            </div>''',
+            f'''<div class="metric-card warning">
+                <div class="metric-icon">⚠️</div>
+                <div class="metric-value">{stats["total_fn"]}</div>
+                <div class="metric-label">False Negatives</div>
+                <div class="metric-trend">Missed vulnerabilities</div>
+            </div>''',
+            f'''<div class="metric-card danger">
+                <div class="metric-icon">❌</div>
+                <div class="metric-value">{stats["total_fp"]}</div>
+                <div class="metric-label">False Positives</div>
+                <div class="metric-trend">Incorrect detections</div>
+            </div>''',
+            f'''<div class="metric-card">
+                <div class="metric-icon">📈</div>
+                <div class="metric-value">{stats["overall_f1"]:.1f}%</div>
+                <div class="metric-label">F1 Score</div>
+                <div class="metric-trend">Overall performance</div>
+            </div>''',
+            '</section>',
+            
+            # Charts Section
+            '<section id="charts" class="charts-section">',
+            '<div class="section-header">',
+            '<h2 class="section-title">Performance Analysis</h2>',
+            '</div>',
+            '<div class="charts-grid">',
+            '<div class="chart-container">',
+            '<div class="chart-title">Overall Detection Rate</div>',
+            charts['detection_pie'],
+            '</div>',
+            '<div class="chart-container">',
+            '<div class="chart-title">Severity Distribution</div>',
+            charts['severity_bars'],
+            '</div>',
+            '</div>',
+            '</section>',
+            
+            # Projects Section
+            '<section id="projects" class="projects-section">',
+            '<div class="section-header">',
+            '<h2 class="section-title">Project Details</h2>',
+            '<div class="filter-buttons">',
+            '<button class="filter-btn active" onclick="filterProjects(\'all\')">All Projects</button>',
+            '<button class="filter-btn" onclick="filterProjects(\'detected\')">With Detections</button>',
+            '<button class="filter-btn" onclick="filterProjects(\'missed\')">No Detections</button>',
+            '</div>',
+            '</div>',
+        ]
+        
+        # Add project cards
+        for i, score in enumerate(scores):
+            project_id = f"project-{i}"
+            detection_rate = score['detection_rate'] * 100
+            
+            html_parts.append(f'''
+            <div class="project-card" id="{project_id}" data-detection-rate="{detection_rate}">
+                <div class="project-header" onclick="toggleProject(this)">
+                    <div class="project-name">{score['project']}</div>
+                    <div class="project-stats">
+                        <div class="stat-item">
+                            <div class="stat-value" style="color: var(--primary);">{score['total_expected']}</div>
+                            <div class="stat-label">Expected</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" style="color: var(--success);">{score['true_positives']}</div>
+                            <div class="stat-label">Found</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" style="color: {self._get_rate_color(detection_rate)};">{detection_rate:.1f}%</div>
+                            <div class="stat-label">Detection</div>
+                        </div>
+                        <div class="expand-icon">▼</div>
+                    </div>
+                </div>
+                <div class="project-details">
+                    <div class="details-content">
+                        <div class="tabs">
+                            <button class="tab active" onclick="switchTab('{project_id}', 'matched')">
+                                Matched<span class="tab-badge">{score['true_positives']}</span>
+                            </button>
+                            <button class="tab" onclick="switchTab('{project_id}', 'missed')">
+                                Missed<span class="tab-badge">{score['false_negatives']}</span>
+                            </button>
+                            <button class="tab" onclick="switchTab('{project_id}', 'extra')">
+                                Extra<span class="tab-badge">{score['false_positives']}</span>
+                            </button>
+                            <button class="tab" onclick="switchTab('{project_id}', 'potential')">
+                                Potential<span class="tab-badge">{len(score.get('potential_matches', []))}</span>
+                            </button>
+                        </div>
+            ''')
+            
+            # Matched findings tab
+            html_parts.append('<div class="tab-content active" data-tab="matched">')
+            if score['matched_findings']:
+                for match in score['matched_findings']:
+                    severity = match.get('severity', 'unknown').lower()
+                    html_parts.append(f'''
+                    <div class="finding-card">
+                        <div class="finding-header">
+                            <div class="finding-title">
+                                {match.get('expected', 'Unknown')}
+                                <span class="confidence-indicator">100% Match</span>
+                            </div>
+                            <span class="severity-badge severity-{severity}">{severity}</span>
+                        </div>
+                        <div class="justification-box">
+                            <strong>Justification:</strong> {match.get('justification', 'No justification provided')}
                         </div>
                     </div>
-                    <div class="metric-card">
-                        <div class="label">Precision</div>
-                        <div class="value {'confidence-high' if stats['overall_precision'] > 50 else 'confidence-medium' if stats['overall_precision'] > 25 else 'confidence-low'}">
-                            {stats['overall_precision']:.1f}%
+                    ''')
+            else:
+                html_parts.append('<p style="color: #6b7280; text-align: center; padding: 2rem;">No matched vulnerabilities</p>')
+            html_parts.append('</div>')
+            
+            # Missed findings tab
+            html_parts.append('<div class="tab-content" data-tab="missed">')
+            if score['missed_findings']:
+                for miss in score['missed_findings']:
+                    severity = miss.get('severity', 'unknown').lower()
+                    html_parts.append(f'''
+                    <div class="finding-card">
+                        <div class="finding-header">
+                            <div class="finding-title">{miss.get('title', 'Unknown')}</div>
+                            <span class="severity-badge severity-{severity}">{severity}</span>
+                        </div>
+                        <div class="justification-box">
+                            <strong>Reason:</strong> {miss.get('reason', 'Not detected by tool')}
                         </div>
                     </div>
-                    <div class="metric-card">
-                        <div class="label">F1 Score</div>
-                        <div class="value {'confidence-high' if stats['overall_f1'] > 50 else 'confidence-medium' if stats['overall_f1'] > 25 else 'confidence-low'}">
-                            {stats['overall_f1']:.1f}%
+                    ''')
+            else:
+                html_parts.append('<p style="color: #6b7280; text-align: center; padding: 2rem;">No missed vulnerabilities</p>')
+            html_parts.append('</div>')
+            
+            # Extra findings tab
+            html_parts.append('<div class="tab-content" data-tab="extra">')
+            if score['extra_findings']:
+                for extra in score['extra_findings']:
+                    severity = extra.get('severity', 'unknown').lower()
+                    html_parts.append(f'''
+                    <div class="finding-card">
+                        <div class="finding-header">
+                            <div class="finding-title">{extra.get('title', 'Unknown')}</div>
+                            <span class="severity-badge severity-{severity}">{severity}</span>
                         </div>
                     </div>
-                </div>
-                
-                {'<div class="chart-container"><img src="' + charts["metrics"] + '" alt="Performance Metrics"></div>' if charts.get("metrics") else ''}
-            </div>
+                    ''')
+            else:
+                html_parts.append('<p style="color: #6b7280; text-align: center; padding: 2rem;">No extra findings</p>')
+            html_parts.append('</div>')
             
-            <!-- Detection by Project -->
-            <div class="section">
-                <h2>Detection Rate by Project</h2>
-                {'<div class="chart-container"><img src="' + charts["detection"] + '" alt="Detection by Project"></div>' if charts.get("detection") else ''}
-                
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Project</th>
-                            <th>Expected</th>
-                            <th>Found</th>
-                            <th>True Positives</th>
-                            <th>False Negatives</th>
-                            <th>False Positives</th>
-                            <th>Detection Rate</th>
-                            <th>Precision</th>
-                            <th>F1 Score</th>
-                        </tr>
-                    </thead>
-                    <tbody>"""
-        
-        # Add project rows
-        for score in scores:
-            detection_class = 'confidence-high' if score['detection_rate'] > 0.5 else 'confidence-medium' if score['detection_rate'] > 0.25 else 'confidence-low'
-            precision_class = 'confidence-high' if score['precision'] > 0.5 else 'confidence-medium' if score['precision'] > 0.25 else 'confidence-low'
-            f1_class = 'confidence-high' if score['f1_score'] > 0.5 else 'confidence-medium' if score['f1_score'] > 0.25 else 'confidence-low'
+            # Potential matches tab
+            html_parts.append('<div class="tab-content" data-tab="potential">')
+            if score.get('potential_matches'):
+                for pot in score['potential_matches']:
+                    confidence = pot.get('confidence', 0) * 100
+                    html_parts.append(f'''
+                    <div class="finding-card">
+                        <div class="finding-header">
+                            <div class="finding-title">
+                                {pot.get('expected_title', 'Unknown')}
+                                <span class="confidence-indicator" style="background: var(--warning);">{confidence:.0f}% Confidence</span>
+                            </div>
+                        </div>
+                        {self._format_dismissal_reasons(pot.get('dismissal_reasons', []))}
+                        <div class="justification-box">
+                            <strong>Analysis:</strong> {pot.get('justification', 'Requires manual review')}
+                        </div>
+                    </div>
+                    ''')
+            else:
+                html_parts.append('<p style="color: #6b7280; text-align: center; padding: 2rem;">No potential matches</p>')
+            html_parts.append('</div>')
             
-            html += f"""
-                        <tr>
-                            <td><strong>{score['project']}</strong></td>
-                            <td>{score['total_expected']}</td>
-                            <td>{score['total_found']}</td>
-                            <td style="color: #28a745;">{score['true_positives']}</td>
-                            <td style="color: #dc3545;">{score['false_negatives']}</td>
-                            <td style="color: #ffc107;">{score['false_positives']}</td>
-                            <td class="{detection_class}">{score['detection_rate']*100:.1f}%</td>
-                            <td class="{precision_class}">{score['precision']*100:.1f}%</td>
-                            <td class="{f1_class}">{score['f1_score']*100:.1f}%</td>
-                        </tr>"""
+            html_parts.append('</div></div></div>')
         
-        html += """
-                    </tbody>
-                </table>
-            </div>
-            
-            <!-- Severity Distribution -->
-            <div class="section">
-                <h2>Vulnerability Severity Distribution</h2>
-                """ + (f'<div class="chart-container"><img src="{charts["severity"]}" alt="Severity Distribution"></div>' if charts.get("severity") else '') + """
-                
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Severity</th>
-                            <th>Expected</th>
-                            <th>Found (True Positives)</th>
-                            <th>Detection Rate</th>
-                        </tr>
-                    </thead>
-                    <tbody>"""
+        html_parts.extend([
+            '</section>',
+            '</div>',  # container
+            javascript,
+            '</body>',
+            '</html>'
+        ])
         
-        # Add severity rows
-        for severity in ['critical', 'high', 'medium', 'low']:
-            sev_data = stats['severity_stats'].get(severity, {'expected': 0, 'found': 0})
-            detection = (sev_data['found'] / sev_data['expected'] * 100) if sev_data['expected'] > 0 else 0
-            
-            html += f"""
-                        <tr>
-                            <td><span class="severity-badge severity-{severity}">{severity.upper()}</span></td>
-                            <td>{sev_data['expected']}</td>
-                            <td>{sev_data['found']}</td>
-                            <td>{detection:.1f}%</td>
-                        </tr>"""
-        
-        html += """
-                    </tbody>
-                </table>
-            </div>
-            
-            <!-- Sample Findings -->
-            <div class="section">
-                <h2>Sample Findings</h2>
-                
-                <h3 style="color: #28a745; margin-top: 20px;">✓ Matched Findings (True Positives)</h3>"""
-        
-        # Show sample matched findings
-        sample_count = 0
-        for score in scores:
-            for match in score.get('matched_findings', [])[:2]:  # Max 2 per project
-                if sample_count >= 5:  # Total max 5
-                    break
-                html += f"""
-                <div class="finding-card matched">
-                    <div class="finding-title">
-                        {match['expected']}
-                    </div>
-                    <div class="finding-details">
-                        <strong>Matched with:</strong> {match['matched']}<br>
-                        <strong>Confidence:</strong> <span class="confidence-high">{match['confidence']:.2f}</span><br>
-                        <strong>Severity:</strong> <span class="severity-badge severity-{match.get('severity', 'unknown')}">{match.get('severity', 'unknown')}</span>
-                    </div>
-                    <div class="justification">
-                        {match.get('justification', 'No justification provided')}
-                    </div>
-                </div>"""
-                sample_count += 1
-        
-        html += """
-                <h3 style="color: #ffc107; margin-top: 30px;">⚠ Potential Matches (Need Review)</h3>"""
-        
-        # Show sample potential matches
-        sample_count = 0
-        for score in scores:
-            for match in score.get('potential_matches', [])[:2]:
-                if sample_count >= 3:
-                    break
-                html += f"""
-                <div class="finding-card potential">
-                    <div class="finding-title">
-                        {match['expected']}
-                    </div>
-                    <div class="finding-details">
-                        <strong>Potentially matched with:</strong> {match['matched']}<br>
-                        <strong>Confidence:</strong> <span class="confidence-medium">{match['confidence']:.2f}</span><br>
-                        <strong>Severity:</strong> <span class="severity-badge severity-{match.get('severity', 'unknown')}">{match.get('severity', 'unknown')}</span>
-                    </div>
-                    {self._format_dismissal_reasons(match.get('dismissal_reasons', []))}
-                    <div class="justification">
-                        {match.get('justification', 'No justification provided')}
-                    </div>
-                </div>"""
-                sample_count += 1
-        
-        html += """
-                <h3 style="color: #dc3545; margin-top: 30px;">✗ Missed Findings (False Negatives)</h3>"""
-        
-        # Show sample missed findings
-        sample_count = 0
-        for score in scores:
-            for miss in score.get('missed_findings', [])[:2]:
-                if sample_count >= 5:
-                    break
-                html += f"""
-                <div class="finding-card missed">
-                    <div class="finding-title">
-                        {miss['title']}
-                    </div>
-                    <div class="finding-details">
-                        <strong>Severity:</strong> <span class="severity-badge severity-{miss.get('severity', 'unknown')}">{miss.get('severity', 'unknown')}</span><br>
-                        <strong>Reason:</strong> {miss.get('reason', 'Not detected by tool')}
-                    </div>
-                </div>"""
-                sample_count += 1
-        
-        html += """
-            </div>
-            
-            <!-- Scan Information -->
-            <div class="info-panel">
-                <h3>Scan Information</h3>
-                <div class="info-item">
-                    <span class="info-label">Tool:</span> {self.scan_info['tool_name']} {self.scan_info['tool_version']}
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Model:</span> {self.scan_info['model']}
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Benchmark:</span> {self.scan_info['benchmark_version']}
-                </div>
-                <div class="info-item">
-                    <span class="info-label">Date:</span> {self.scan_info['scan_date']}
-                </div>"""
-        
-        if self.scan_info.get('notes'):
-            html += f"""
-                <div class="info-item">
-                    <span class="info-label">Notes:</span> {self.scan_info['notes']}
-                </div>"""
-        
-        html += f"""
-            </div>
-        </div>
-        
-        <div class="footer">
-            <p>Generated by <a href="https://github.com/scabench">ScaBench</a> Report Generator</p>
-            <p>Report generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-        </div>
-    </div>
-</body>
-</html>"""
-        
-        return html
+        return '\n'.join(html_parts)
+    
+    def _get_rate_color(self, rate: float) -> str:
+        """Get color based on detection rate."""
+        if rate >= 70:
+            return 'var(--success)'
+        elif rate >= 40:
+            return 'var(--warning)'
+        else:
+            return 'var(--danger)'
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='Generate HTML reports from ScaBench scoring results',
-        formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    
-    parser.add_argument('--scores', '-s', required=True,
-                       help='Directory containing score_*.json files')
-    parser.add_argument('--benchmark', '-b',
-                       help='Path to benchmark dataset (optional, for extra context)')
-    parser.add_argument('--output', '-o', default='report.html',
-                       help='Output HTML file (default: report.html)')
-    parser.add_argument('--tool-name', default='Baseline Analyzer',
-                       help='Name of the tool being evaluated')
-    parser.add_argument('--tool-version', default='v1.0',
-                       help='Version of the tool')
-    parser.add_argument('--model', default='Not specified',
-                       help='Model used for analysis')
-    parser.add_argument('--notes',
-                       help='Additional notes for the report')
+    parser = argparse.ArgumentParser(description='Generate beautiful ScaBench HTML reports')
+    parser.add_argument('--scores', required=True, help='Directory containing score JSON files')
+    parser.add_argument('--output', default='report.html', help='Output HTML file')
+    parser.add_argument('--tool-name', default='Security Analyzer', help='Name of the tool')
+    parser.add_argument('--model', default='Not specified', help='Model used for analysis')
+    parser.add_argument('--benchmark', help='Optional benchmark dataset file')
     
     args = parser.parse_args()
     
-    # Configuration
     config = {
         'tool_name': args.tool_name,
-        'tool_version': args.tool_version,
         'model': args.model,
-        'notes': args.notes or ''
     }
     
-    # Generate report
     generator = ReportGenerator(config)
+    generator.generate_report(
+        Path(args.scores),
+        Path(args.benchmark) if args.benchmark else None,
+        Path(args.output)
+    )
     
-    scores_dir = Path(args.scores)
-    if not scores_dir.exists():
-        console.print(f"[red]Error: Scores directory not found: {scores_dir}[/red]")
-        sys.exit(1)
-    
-    benchmark_file = Path(args.benchmark) if args.benchmark else None
-    if benchmark_file and not benchmark_file.exists():
-        console.print(f"[yellow]Warning: Benchmark file not found: {benchmark_file}[/yellow]")
-        benchmark_file = None
-    
-    output_file = Path(args.output)
-    
-    try:
-        report_path = generator.generate_report(scores_dir, benchmark_file, output_file)
-        console.print(f"\n[bold green]Report successfully generated![/bold green]")
-        console.print(f"View the report: [cyan]{report_path}[/cyan]")
-    except Exception as e:
-        console.print(f"[red]Error generating report: {e}[/red]")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    console.print("\n[bold green]Report successfully generated![/bold green]")
+    console.print(f"View the report: {args.output}")
 
 
 if __name__ == "__main__":

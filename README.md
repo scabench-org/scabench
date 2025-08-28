@@ -68,10 +68,61 @@ python baseline-runner/baseline_runner.py \
 
 ### 📈 **Scorer** (`scoring/scorer.py`)
 Evaluates ANY tool's findings against the benchmark using LLM matching.
+
+**Important: Model Requirements**
+- The scorer uses batch matching - sends ALL findings to the LLM in a single call
+- Requires a model with **long context window** to handle large projects
+- **Recommended**: `gpt-5-mini` (optimal balance of accuracy and speed)
+- Alternative: `gpt-4o` for very large projects needing longer context
+
+#### Scoring a Single Project
+
+**IMPORTANT**: When scoring a single project, you must specify the exact project ID from the benchmark dataset using the `--project` flag. Project IDs often contain hyphens (e.g., `code4rena_iq-ai_2025_03`) while baseline result filenames may have underscores.
+
 ```bash
+# Example: Score results for a single project
 python scoring/scorer.py \
   --benchmark datasets/curated-2025-08-18.json \
-  --results your_tool_results.json
+  --results baseline_results/baseline_code4rena_iq_ai_2025_03.json \
+  --project code4rena_iq-ai_2025_03 \
+  --model gpt-5-mini
+
+# General format
+python scoring/scorer.py \
+  --benchmark datasets/curated-2025-08-18.json \
+  --results baseline_results/baseline_<PROJECT_NAME>.json \
+  --project <EXACT_PROJECT_ID_FROM_DATASET> \
+  --model gpt-5-mini
+```
+
+Note: The `--project` parameter must match the exact `project_id` field from the benchmark dataset JSON. Check the dataset file if unsure about the correct project ID.
+
+#### Scoring an Entire Baseline Run (All Projects)
+
+To score all baseline results at once:
+
+```bash
+# Score all baseline results in a directory
+python scoring/scorer.py \
+  --benchmark datasets/curated-2025-08-18.json \
+  --results-dir baseline_results/ \
+  --output scores/ \
+  --model gpt-5-mini
+
+# This will:
+# 1. Process all baseline_*.json files in the results directory
+# 2. Automatically extract and match project IDs
+# 3. Generate individual score files for each project
+# 4. Save results to the scores/ directory
+```
+
+After scoring, generate a comprehensive report:
+```bash
+python scoring/report_generator.py \
+  --scores scores/ \
+  --output baseline_report.html \
+  --tool-name "Baseline" \
+  --model gpt-5-mini
 ```
 
 ### 📄 **Report Generator** (`scoring/report_generator.py`)
@@ -114,7 +165,121 @@ This will automatically:
 ./run_pipeline.sh --project vulnerable_vault --source sources/vulnerable_vault
 ```
 
-### Option 3: Step-by-Step Manual Process
+### Option 3: Complete Command-Line Guides
+
+#### Complete Guide: Analyze and Score a Single Project
+
+```bash
+# Step 1: Set up environment
+export OPENAI_API_KEY="your-key-here"
+
+# Step 2: Find your project ID in the dataset
+PROJECT_ID="code4rena_iq-ai_2025_03"  # Example - check dataset for exact ID
+
+# Step 3: Download the source code
+python dataset-generator/checkout_sources.py \
+  --dataset datasets/curated-2025-08-18.json \
+  --project $PROJECT_ID \
+  --output sources/
+
+# Step 4: Run baseline analysis
+python baseline-runner/baseline_runner.py \
+  --project $PROJECT_ID \
+  --source sources/${PROJECT_ID//-/_} \
+  --output baseline_results/ \
+  --model gpt-5-mini
+
+# Step 5: Score the results (IMPORTANT: use exact project ID with hyphens)
+python scoring/scorer.py \
+  --benchmark datasets/curated-2025-08-18.json \
+  --results baseline_results/baseline_${PROJECT_ID//-/_}.json \
+  --project $PROJECT_ID \
+  --output scores/ \
+  --model gpt-5-mini
+
+# Step 6: Generate HTML report
+python scoring/report_generator.py \
+  --scores scores/ \
+  --output single_project_report.html \
+  --tool-name "Baseline" \
+  --model gpt-5-mini
+
+# Step 7: View the report
+open single_project_report.html  # macOS
+# xdg-open single_project_report.html  # Linux
+```
+
+#### Complete Guide: Analyze and Score ALL Projects
+
+```bash
+# Step 1: Set up environment
+export OPENAI_API_KEY="your-key-here"
+
+# Step 2: Download ALL project sources (this may take a while)
+python dataset-generator/checkout_sources.py \
+  --dataset datasets/curated-2025-08-18.json \
+  --output sources/
+
+# Step 3: Run baseline on ALL projects (this will take hours)
+for dir in sources/*/; do
+  project=$(basename "$dir")
+  echo "Analyzing $project..."
+  python baseline-runner/baseline_runner.py \
+    --project "$project" \
+    --source "$dir" \
+    --output baseline_results/ \
+    --model gpt-5-mini \
+    --max-files 50  # Optional: limit files for faster processing
+done
+
+# Step 4: Score ALL baseline results
+python scoring/scorer.py \
+  --benchmark datasets/curated-2025-08-18.json \
+  --results-dir baseline_results/ \
+  --output scores/ \
+  --model gpt-5-mini
+
+# Step 5: Generate comprehensive report
+python scoring/report_generator.py \
+  --scores scores/ \
+  --output full_baseline_report.html \
+  --tool-name "Baseline Analysis" \
+  --model gpt-5-mini
+
+# Step 6: View the report
+open full_baseline_report.html  # macOS
+# xdg-open full_baseline_report.html  # Linux
+```
+
+#### Quick Test Run (Small Sample)
+
+```bash
+# Test with just one small project for quick validation
+export OPENAI_API_KEY="your-key-here"
+
+# Pick a small project
+PROJECT_ID="code4rena_coded-estate-invitational_2024_12"
+
+# Run complete pipeline for single project
+python dataset-generator/checkout_sources.py --project $PROJECT_ID --output sources/
+python baseline-runner/baseline_runner.py \
+  --project $PROJECT_ID \
+  --source sources/${PROJECT_ID//-/_} \
+  --max-files 5 \
+  --model gpt-5-mini
+python scoring/scorer.py \
+  --benchmark datasets/curated-2025-08-18.json \
+  --results baseline_results/baseline_${PROJECT_ID//-/_}.json \
+  --project $PROJECT_ID \
+  --model gpt-5-mini
+python scoring/report_generator.py \
+  --scores scores/ \
+  --output test_report.html \
+  --model gpt-5-mini
+open test_report.html
+```
+
+### Option 4: Step-by-Step Manual Process
 
 ## Two Ways to Use ScaBench
 
@@ -238,8 +403,10 @@ The scorer enforces EXTREMELY STRICT matching criteria:
 ## Performance Tips
 
 1. **Model Selection**:
-   - Use `gpt-5-mini` for both baseline analysis and scoring (best accuracy)
-   - Use `gpt-4o-mini` for faster processing with slightly lower accuracy
+   - **For Scoring**: Use `gpt-5-mini` (recommended) - needs long context for batch matching
+   - **For Baseline Analysis**: Use `gpt-5-mini` for best accuracy
+   - **Important**: The scorer processes ALL findings in a single LLM call, so a model with sufficient context window is critical
+   - Use `gpt-4o` if you encounter context length errors with very large projects
    - Use `--max-files` to limit analysis during testing
 
 2. **Batch Processing**:

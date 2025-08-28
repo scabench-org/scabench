@@ -191,13 +191,13 @@ fi
 if [ "$SKIP_BASELINE" = false ]; then
     print_header "Step 2: Running Baseline Analysis on All Projects"
     
-    # Get list of all projects
+    # Get list of all projects - USE EXACT IDs FROM DATASET
     PROJECTS=$(python3 -c "
 import json
 with open('$DATASET', 'r') as f:
     data = json.load(f)
     for project in data:
-        project_id = project.get('project_id', '').replace('-', '_').replace(' ', '_').lower()
+        project_id = project.get('project_id', '')
         print(project_id)
 ")
     
@@ -208,22 +208,16 @@ with open('$DATASET', 'r') as f:
         ANALYZED=$((ANALYZED + 1))
         print_color $CYAN "[$ANALYZED/$PROJECT_COUNT] Analyzing: $PROJECT_ID"
         
-        # Find source directory
-        SOURCE_DIR=""
-        for DIR in "$SOURCES_DIR"/*; do
-            if [[ $(basename "$DIR") == *"$PROJECT_ID"* ]]; then
-                SOURCE_DIR="$DIR"
-                break
-            fi
-        done
+        # Find source directory - checkout_sources.py should have created it with the exact project ID
+        SOURCE_DIR="$SOURCES_DIR/$PROJECT_ID"
         
-        if [ -z "$SOURCE_DIR" ] || [ ! -d "$SOURCE_DIR" ]; then
-            print_color $YELLOW "  ⚠ Source not found for $PROJECT_ID, skipping"
+        if [ ! -d "$SOURCE_DIR" ]; then
+            print_color $YELLOW "  ⚠ Source not found at $SOURCE_DIR, skipping"
             FAILED=$((FAILED + 1))
             continue
         fi
         
-        # Run baseline analysis
+        # Run baseline analysis using EXACT project ID
         CMD="python baseline-runner/baseline_runner.py"
         CMD="$CMD --project \"$PROJECT_ID\""
         CMD="$CMD --source \"$SOURCE_DIR\""

@@ -1,0 +1,62 @@
+{
+  "project": "sherlock_symmio_2025_03",
+  "timestamp": "2025-08-30T02:24:31.878221",
+  "files_analyzed": 13,
+  "files_skipped": 0,
+  "total_findings": 4,
+  "findings": [
+    {
+      "title": "Unlimited minting by MINTER_ROLE (no cap or constraints)",
+      "description": "What: The public mint(address to, uint256 amount) function allows any account holding MINTER_ROLE to mint an arbitrary number of tokens to any address with no cap, allocation limits, rate limiting, or on\u2011chain governance restriction.\nWhere: mint() function (function mint(address to, uint256 amount) external onlyRole(MINTER_ROLE) { _mint(to, amount); })\nWhy it's a security issue: If an account holding MINTER_ROLE is compromised, malicious, or set incorrectly, the attacker can mint unlimited tokens. That directly dilutes existing token holders, undermines token economics, and can be used to drain value from downstream protocols or markets that rely on token scarcity.\nPotential impact: Unlimited inflation \u2014 loss of token value for holders, market manipulation, financial loss for users and integrators, and inability to trust token supply. This can lead to catastrophic loss of funds for counterparties or liquidity pools that depend on supply controls.",
+      "vulnerability_type": "privilege abuse / minting centralization",
+      "severity": "high",
+      "confidence": 0.95,
+      "location": "mint() function, contract Symmio",
+      "file": "symm.sol",
+      "id": "a5ac84e81731cd4c",
+      "reported_by_model": "gpt-5-mini",
+      "status": "proposed"
+    },
+    {
+      "title": "DEFAULT_ADMIN_ROLE holder has full, unchecked control over roles",
+      "description": "What: The constructor grants DEFAULT_ADMIN_ROLE to the provided admin address (_grantRole(DEFAULT_ADMIN_ROLE, admin)). The DEFAULT_ADMIN_ROLE is the admin for all roles by default in OpenZeppelin AccessControl. Any account with DEFAULT_ADMIN_ROLE can grant or revoke MINTER_ROLE and can change role administration.\nWhere: constructor(..., address admin) { ... _grantRole(DEFAULT_ADMIN_ROLE, admin); }\nWhy it's a security issue: The account assigned DEFAULT_ADMIN_ROLE can (directly or indirectly) enable unlimited minting by granting MINTER_ROLE, revoke roles, and otherwise alter access control. If that account is compromised, malicious, or misconfigured (for example an EOA instead of an intended timelock/multisig), the attacker gains the power to perform all privileged actions, including enabling unlimited minting.\nPotential impact: Privilege escalation and full protocol control by a single key \u2014 unauthorized issuance of tokens, revocation of protections, and arbitrary administrative actions that can cause loss of funds or permanent protocol damage.",
+      "vulnerability_type": "access control / centralization",
+      "severity": "high",
+      "confidence": 0.9,
+      "location": "constructor(address admin), contract Symmio",
+      "file": "symm.sol",
+      "id": "98b2effa8cead8d7",
+      "reported_by_model": "gpt-5-mini",
+      "status": "proposed"
+    },
+    {
+      "title": "Contract relies on external timelock/multisig but does not enforce it on-chain",
+      "description": "What: The contract comment indicates DEFAULT_ADMIN_ROLE will be assigned to a timelock managed by multisig, but the code only requires admin != address(0) and assigns the role to the provided admin address. There is no on-chain enforcement, verification, or safety checks ensuring that the admin is a timelock or multisig contract.\nWhere: constructor(..., address admin) { require(admin != address(0), \"Zero address\"); _grantRole(DEFAULT_ADMIN_ROLE, admin); }\nWhy it's a security issue: If the deployer mistakenly supplies a single-key EOA instead of the intended timelock/multisig, or if the timelock/multisig is itself misconfigured, the administrative privileges are concentrated in a single compromised key. The contract code gives full trust to the provided address without safeguards.\nPotential impact: Misconfiguration or human error during deployment can lead to a single point of compromise with full administrative control (granting minter, revoking roles, etc.), increasing risk of unauthorized minting and other administrative exploits.",
+      "vulnerability_type": "operational security / trust assumption",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": "constructor(address admin), contract Symmio",
+      "file": "symm.sol",
+      "id": "c2d357074b468ab8",
+      "reported_by_model": "gpt-5-mini",
+      "status": "proposed"
+    },
+    {
+      "title": "No global cap on total tokens minted (MAX_ISSUABLE_TOKEN not enforced for lifetime)",
+      "description": "What: The contract enforces MAX_ISSUABLE_TOKEN only as a cap on totalAllocation at the moment allocations are set (setBatchAllocations), but it does not enforce that the cumulative amount of tokens minted over the contract's lifetime (totalMintAmount) cannot exceed MAX_ISSUABLE_TOKEN.\n\nWhere: setBatchAllocations() enforces totalAllocation <= MAX_ISSUABLE_TOKEN, but neither claim() nor adminClaim() check totalMintAmount against MAX_ISSUABLE_TOKEN (see claim() and adminClaim()).\n\nWhy it's a security issue: If SETTER_ROLE repeatedly re-assigns allocations after users claim (userAllocations go to zero on claim), the setter can re-use the same allocation budget many times. Each round of claims results in new mint operations. Because there is no check preventing totalMintAmount from growing beyond MAX_ISSUABLE_TOKEN, the contract can instruct the token to mint far more tokens than the intended maximum cap.\n\nPotential impact: Unlimited inflation of the token supply (from the perspective of this minter interface), undermining the intended maximum issuance limit. This can lead to severe economic loss for token holders, protocol trust collapse, and ability for privileged actors to mint unbounded tokens over time.\n",
+      "vulnerability_type": "logic; missing invariant (supply cap enforcement)",
+      "severity": "critical",
+      "confidence": 0.95,
+      "location": "setBatchAllocations(), claim(), adminClaim()",
+      "file": "SymmAllocationClaimer.sol",
+      "id": "6e114f11b6d4eabd",
+      "reported_by_model": "gpt-5-mini",
+      "status": "proposed"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 18320,
+    "output_tokens": 41004,
+    "total_tokens": 59324
+  }
+}

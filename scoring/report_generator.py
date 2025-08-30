@@ -964,7 +964,7 @@ class ReportGenerator:
             '<head>',
             '<meta charset="UTF-8">',
             '<meta name="viewport" content="width=device-width, initial-scale=1.0">',
-            '<title>Security Tool Benchmark Report - ScaBench</title>',
+            '<title>ScaBench Security Tool Benchmark Report</title>',
             css,
             '</head>',
             '<body>',
@@ -982,7 +982,7 @@ class ReportGenerator:
             # Navigation
             '<div class="nav-container">',
             '<nav class="nav">',
-            '<div class="nav-title">🎯 Security Benchmark</div>',
+            '<div class="nav-title">🎯 ScaBench</div>',
             '<ul class="nav-links">',
             '<li><a href="#overview">Overview</a></li>',
             '<li><a href="#metrics">Metrics</a></li>',
@@ -997,7 +997,7 @@ class ReportGenerator:
             
             # Hero Section
             '<section id="overview" class="hero">',
-            '<h1>Security Tool Benchmark Report</h1>',
+            '<h1>ScaBench Security Tool Benchmark Report</h1>',
             '<p style="font-size: 1.1rem; color: #6b7280; margin-bottom: 2rem;">',
             f'Comprehensive benchmark evaluation across {stats["total_projects"]} projects with {stats["total_expected"]} known vulnerabilities',
             '</p>',

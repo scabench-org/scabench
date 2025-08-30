@@ -30,13 +30,13 @@ console = Console()
 
 # STRICT MATCHING POLICY
 MATCHING_POLICY = """
-EXTREMELY STRICT MATCHING REQUIREMENTS:
+STRICT MATCHING REQUIREMENTS:
 
-1. IDENTICAL LOCATION - Must be EXACT same file/contract/function
-2. EXACT IDENTIFIERS - Same contract names, function names, variables
+1. IDENTICAL LOCATION - Affected location reported must be the same file/contract/function
+2. SAME IDENTIFIERS - Same class/contract names, function names, variables
 3. IDENTICAL ROOT CAUSE - Not just similar, must be THE SAME vulnerability
-4. IDENTICAL ATTACK VECTOR - Exact same exploitation method
-5. IDENTICAL IMPACT - Exact same security consequence
+4. IDENTICAL ATTACK VECTOR - The reported attack SHOULD be identical, slight variation is allowed as long as the exact same root causd is exploited
+5. SAME IMPACT - Impact SHOULD be the same, slight variation (i.e. underreporting or overreporting) is allowed
 6. NO MATCH for similar patterns in different locations
 7. NO MATCH for same bug type but different functions
 8. WHEN IN DOUBT: DO NOT MATCH
@@ -129,21 +129,45 @@ REMEMBER:
 - When in doubt, DO NOT MATCH (confidence < 1.0)
 """
 
+        # Prefer OpenAI Responses API for gpt-5 family; fallback to Chat Completions
+        use_responses = str(self.model).lower().startswith("gpt-5")
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You are a security expert evaluating vulnerability matches with EXTREME strictness."},
-                    {"role": "user", "content": prompt}
-                ],
-                response_format={"type": "json_object"},
-                max_completion_tokens=4000
-            )
-            
-            result = json.loads(response.choices[0].message.content)
-            return result
-            
+            if use_responses:
+                # Ask for a strict JSON object; let the server enforce JSON
+                resp = self.client.responses.create(
+                    model=self.model,
+                    input=prompt,
+                    instructions="Return ONLY valid JSON as specified.",
+                    text={"format": {"type": "json_object"}},
+                )
+                out = getattr(resp, 'output_text', None) or ""
+                return json.loads(out)
+            else:
+                completion = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": "You are a security expert evaluating vulnerability matches with EXTREME strictness."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    response_format={"type": "json_object"},
+                    max_tokens=4000
+                )
+                content = completion.choices[0].message.content or ""
+                return json.loads(content)
         except Exception as e:
+            # Last‑chance fallback: try parsing any text chunks from Responses
+            try:
+                if use_responses and 'resp' in locals():
+                    chunks = []
+                    for item in getattr(resp, 'output', []) or []:
+                        for c in getattr(item, 'content', []) or []:
+                            t = getattr(c, 'text', None)
+                            if t and getattr(t, 'value', None):
+                                chunks.append(t.value)
+                    if chunks:
+                        return json.loads("\n".join(chunks))
+            except Exception:
+                pass
             console.print(f"[red]Error in batch LLM matching: {e}[/red]")
             # Return empty matches on error
             return {
@@ -208,23 +232,37 @@ REMEMBER:
             if confidence == 1.0 and found:
                 # Perfect match - count as true positive
                 matched_findings.append({
+                    # Titles for quick scanning
                     'expected': expected.get('title', 'Unknown'),
                     'matched': found.get('title', 'Unknown'),
                     'confidence': confidence,
                     'justification': justification,
-                    'severity': expected.get('severity', 'unknown')
+                    'severity': expected.get('severity', 'unknown'),
+                    # Full details for report
+                    'expected_title': expected.get('title', 'Unknown'),
+                    'expected_description': expected.get('description', ''),
+                    'found_title': found.get('title', 'Unknown'),
+                    'found_description': found.get('description', ''),
+                    'found_id': found.get('id', '')
                 })
                 matched_indices.add(found_idx)
                 
             elif confidence >= 0.5 and found:
                 # Potential match - needs review, NOT counted as TP
                 potential_matches.append({
+                    # Titles for quick scanning
                     'expected': expected.get('title', 'Unknown'),
                     'matched': found.get('title', 'Unknown'),
                     'confidence': confidence,
                     'justification': justification,
                     'dismissal_reasons': dismissal_reasons,
-                    'severity': expected.get('severity', 'unknown')
+                    'severity': expected.get('severity', 'unknown'),
+                    # Full details for report
+                    'expected_title': expected.get('title', 'Unknown'),
+                    'expected_description': expected.get('description', ''),
+                    'found_title': found.get('title', 'Unknown'),
+                    'found_description': found.get('description', ''),
+                    'found_id': found.get('id', '')
                 })
                 # Still counts as missed since confidence < 1.0
                 missed_findings.append({

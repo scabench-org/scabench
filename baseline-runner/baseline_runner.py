@@ -218,89 +218,16 @@ Identify and report security vulnerabilities found."""
             console.print(f"[red]Error analyzing {file_path.name}: {e}[/red]")
             return [], 0, 0
     
-    def select_files_for_analysis(self, files: List[Path], max_files: int) -> List[Path]:
-        """Intelligently select the most important files to analyze."""
-        if len(files) <= max_files:
-            return files
-        
-        console.print(f"[yellow]Selecting {max_files} most important files from {len(files)} total[/yellow]")
-        
-        # Priority patterns for smart contract security analysis
-        priority_patterns = [
-            # Core contracts
-            ('*vault*', 100),
-            ('*pool*', 95),
-            ('*router*', 90),
-            ('*treasury*', 85),
-            ('*governance*', 80),
-            
-            # Security-critical
-            ('*access*', 75),
-            ('*oracle*', 75),
-            ('*bridge*', 75),
-            ('*proxy*', 70),
-            ('*upgrade*', 70),
-            
-            # Token/DeFi
-            ('*token*', 65),
-            ('*stake*', 60),
-            ('*reward*', 60),
-            ('*swap*', 55),
-            
-            # Common patterns
-            ('*core*', 50),
-            ('*main*', 45),
-            ('*factory*', 40),
-            ('*registry*', 35),
-        ]
-        
-        # Score files
-        file_scores = []
-        for file in files:
-            score = 0
-            file_lower = file.name.lower()
-            
-            # Check priority patterns
-            for pattern, weight in priority_patterns:
-                import fnmatch
-                if fnmatch.fnmatch(file_lower, pattern):
-                    score += weight
-            
-            # Penalize test/mock files
-            if 'test' in file_lower or 'mock' in file_lower:
-                score -= 100
-            
-            # Prefer contracts over libraries/interfaces
-            if file.suffix == '.sol':
-                with open(file, 'r', encoding='utf-8') as f:
-                    content = f.read(1000)  # Check first 1000 chars
-                    if 'contract ' in content:
-                        score += 20
-                    elif 'library ' in content:
-                        score += 5
-                    elif 'interface ' in content:
-                        score -= 5
-            
-            file_scores.append((file, score))
-        
-        # Sort by score and select top files
-        file_scores.sort(key=lambda x: x[1], reverse=True)
-        selected = [f for f, _ in file_scores[:max_files]]
-        
-        console.print(f"[green]Selected {len(selected)} files based on security importance[/green]")
-        return selected
     
     def analyze_project(self, 
                        project_name: str,
                        source_dir: Path,
-                       max_files: Optional[int] = None,
                        file_patterns: Optional[List[str]] = None) -> AnalysisResult:
         """Analyze a project for security vulnerabilities.
         
         Args:
             project_name: Name of the project
             source_dir: Directory containing source files
-            max_files: Maximum number of files to analyze (None = all)
             file_patterns: List of glob patterns for files to analyze
             
         Returns:
@@ -335,10 +262,6 @@ Identify and report security vulnerabilities found."""
                 findings=[],
                 token_usage={'input_tokens': 0, 'output_tokens': 0, 'total_tokens': 0}
             )
-        
-        # Select files if limit specified
-        if max_files and len(files) > max_files:
-            files = self.select_files_for_analysis(files, max_files)
         
         console.print(f"[dim]Found {len(files)} files to analyze[/dim]")
         
@@ -460,8 +383,8 @@ Examples:
   # Analyze a single project
   %(prog)s --project my_project --source /path/to/source
   
-  # Analyze with file limit
-  %(prog)s --project my_project --source /path/to/source --max-files 20
+  # Analyze specific file patterns
+  %(prog)s --project my_project --source /path/to/source --patterns "src/*.sol" "contracts/*.sol"
   
   # Use specific model
   %(prog)s --project my_project --source /path/to/source --model gpt-4o
@@ -477,8 +400,6 @@ Examples:
                        help='Source directory containing project files')
     parser.add_argument('--output', '-o', default='baseline_results',
                        help='Output directory for results (default: baseline_results)')
-    parser.add_argument('--max-files', type=int, metavar='N',
-                       help='Maximum number of files to analyze')
     parser.add_argument('--model', '-m', default='gpt-5-mini',
                        help='OpenAI model to use (default: gpt-5-mini)')
     parser.add_argument('--patterns', nargs='+', metavar='PATTERN',
@@ -520,7 +441,6 @@ Examples:
         result = runner.analyze_project(
             project_name=args.project,
             source_dir=source_dir,
-            max_files=args.max_files,
             file_patterns=args.patterns
         )
         

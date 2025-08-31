@@ -10,7 +10,6 @@
 #   --project NAME       Project name/identifier
 #   --source DIR         Source code directory
 #   --benchmark FILE     Benchmark dataset file (default: datasets/curated-2025-08-18.json)
-#   --max-files N        Maximum files to analyze (default: all)
 #   --analysis-model M   Model for analysis (default: gpt-5-mini)
 #   --scoring-model M    Model for scoring (default: gpt-4o)
 #   --output-dir DIR     Output directory (default: pipeline_results/PROJECT_NAME/)
@@ -27,7 +26,6 @@ set -e  # Exit on error
 BENCHMARK="datasets/curated-2025-08-18.json"
 ANALYSIS_MODEL="gpt-5-mini"
 SCORING_MODEL="gpt-4o"
-MAX_FILES=""
 VERBOSE=false
 SKIP_ANALYSIS=false
 SKIP_SCORING=false
@@ -70,7 +68,6 @@ show_help() {
     echo ""
     echo "Optional Arguments:"
     echo "  --benchmark FILE     Benchmark dataset file (default: datasets/curated-2025-08-18.json)"
-    echo "  --max-files N        Maximum files to analyze (default: all)"
     echo "  --analysis-model M   Model for analysis (default: gpt-5-mini)"
     echo "  --scoring-model M    Model for scoring (default: gpt-5-mini)"
     echo "  --output-dir DIR     Output directory (default: pipeline_results/PROJECT_NAME/)"
@@ -87,8 +84,8 @@ show_help() {
     echo "  # Basic usage"
     echo "  $0 --project my_project --source ./contracts"
     echo ""
-    echo "  # With custom models and file limit"
-    echo "  $0 --project my_project --source ./contracts --max-files 20 --analysis-model gpt-4o"
+    echo "  # With custom model"
+    echo "  $0 --project my_project --source ./contracts --analysis-model gpt-4o"
     echo ""
     echo "  # Skip analysis and just score existing results"
     echo "  $0 --project my_project --source ./contracts --skip-analysis"
@@ -109,10 +106,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --benchmark)
             BENCHMARK="$2"
-            shift 2
-            ;;
-        --max-files)
-            MAX_FILES="$2"
             shift 2
             ;;
         --analysis-model)
@@ -193,7 +186,6 @@ echo "Project Name:     $PROJECT_NAME"
 if [ "$SKIP_ANALYSIS" = false ]; then
     echo "Source Directory: $SOURCE_DIR"
     echo "Analysis Model:   $ANALYSIS_MODEL"
-    [ -n "$MAX_FILES" ] && echo "Max Files:        $MAX_FILES"
 fi
 echo "Benchmark:        $BENCHMARK"
 echo "Scoring Model:    $SCORING_MODEL"
@@ -221,7 +213,6 @@ if [ "$SKIP_ANALYSIS" = false ]; then
     CMD="$CMD --source \"$SOURCE_DIR\""
     CMD="$CMD --output \"$BASELINE_DIR\""
     CMD="$CMD --model \"$ANALYSIS_MODEL\""
-    [ -n "$MAX_FILES" ] && CMD="$CMD --max-files $MAX_FILES"
     
     if [ "$VERBOSE" = true ]; then
         print_color $BLUE "Running: $CMD"

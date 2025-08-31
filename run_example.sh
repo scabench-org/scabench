@@ -89,8 +89,7 @@ python baseline-runner/baseline_runner.py \
     --project test_vulnerable_vault \
     --source test_data/source \
     --output test_data/results/baseline \
-    --model gpt-4o-mini \
-    --max-files 10
+    --model gpt-4o-mini
 
 echo ""
 echo "Baseline analysis complete!"

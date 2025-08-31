@@ -25,7 +25,7 @@ benchmarks/scabench/
 
 #### Baseline Runner (`baseline-runner/baseline_runner.py`)
 - Analyzes smart contracts for security vulnerabilities using LLM
-- Intelligent file selection for optimal coverage
+- Support for file filtering via --patterns argument
 - Support for multiple file patterns and languages
 - Configurable models (GPT-5-mini, GPT-4o, etc.)
 - JSON output format compatible with scoring tool
@@ -64,8 +64,7 @@ benchmarks/scabench/
 ```json
 {
   "baseline_runner": {
-    "model": "gpt-5-mini",
-    "max_files_per_project": 50
+    "model": "gpt-5-mini"
   },
   "scorer": {
     "model": "gpt-4o",

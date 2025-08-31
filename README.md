@@ -175,9 +175,6 @@ The `run_all.sh` script provides a complete end-to-end pipeline that:
 # Run everything with defaults (all projects in dataset, gpt-5-mini model)
 ./run_all.sh
 
-# Limit files per project for faster testing
-./run_all.sh --max-files 20
-
 # Use different model (e.g., gpt-4o-mini for faster/cheaper runs)
 ./run_all.sh --model gpt-4o-mini
 
@@ -185,7 +182,7 @@ The `run_all.sh` script provides a complete end-to-end pipeline that:
 ./run_all.sh --dataset datasets/my_custom_dataset.json
 
 # Combine options
-./run_all.sh --model gpt-4o-mini --max-files 10 --output-dir test_run
+./run_all.sh --model gpt-4o-mini --output-dir test_run
 ```
 
 #### All Options
@@ -194,7 +191,6 @@ The `run_all.sh` script provides a complete end-to-end pipeline that:
 
 Options:
   --dataset FILE       Dataset to use (default: datasets/curated-2025-08-18.json)
-  --max-files N        Max files per project (default: analyze all)
   --model MODEL        Model for analysis (default: gpt-5-mini)
                        Options: gpt-5-mini, gpt-4o-mini, gpt-4o
   --output-dir DIR     Output directory (default: all_results_TIMESTAMP)
@@ -238,8 +234,7 @@ Options:
 #### Performance Notes
 
 - **Full run (all files)**: 4-6 hours for default dataset (31 projects)
-- **Limited run (--max-files 20)**: 1-2 hours
-- **Fast test (--max-files 5 --model gpt-4o-mini)**: 20-30 minutes
+- **Fast test (--model gpt-4o-mini)**: 30-45 minutes
 - **Model selection**:
   - `gpt-5-mini`: Best accuracy (default)
   - `gpt-4o-mini`: Faster, cheaper, good for testing
@@ -316,7 +311,6 @@ for dir in sources/*/; do
     --source "$dir" \
     --output baseline_results/ \
     --model gpt-5-mini \
-    --max-files 50  # Optional: limit files for faster processing
 done
 
 # Step 4: Score ALL baseline results
@@ -352,7 +346,6 @@ python dataset-generator/checkout_sources.py --project $PROJECT_ID --output sour
 python baseline-runner/baseline_runner.py \
   --project $PROJECT_ID \
   --source sources/${PROJECT_ID//-/_} \
-  --max-files 5 \
   --model gpt-5-mini
 python scoring/scorer.py \
   --benchmark datasets/curated-2025-08-18.json \
@@ -490,7 +483,7 @@ The scorer enforces EXTREMELY STRICT matching criteria:
    - **For Baseline Analysis**: Use `gpt-5-mini` for best accuracy
    - **Important**: The scorer processes ALL findings in a single LLM call, so a model with sufficient context window is critical
    - Use `gpt-4o` if you encounter context length errors with very large projects
-   - Use `--max-files` to limit analysis during testing
+   - Use `--patterns` to specify which files to analyze
 
 2. **Batch Processing**:
    ```bash

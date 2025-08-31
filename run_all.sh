@@ -8,7 +8,6 @@
 #
 # Options:
 #   --dataset FILE       Dataset to use (default: datasets/curated-2025-08-18.json)
-#   --max-files N        Max files per project (default: analyze all)
 #   --skip-checkout      Skip source checkout (use existing sources)
 #   --skip-baseline      Skip baseline analysis (use existing results)
 #   --skip-scoring       Skip scoring
@@ -27,7 +26,6 @@ NC='\033[0m'
 
 # Default values
 DATASET="datasets/curated-2025-08-18.json"
-MAX_FILES=""
 MODEL="gpt-5-mini"  # Default model for all operations
 SKIP_CHECKOUT=false
 SKIP_BASELINE=false
@@ -61,7 +59,6 @@ Usage:
 
 Options:
   --dataset FILE       Dataset to use (default: datasets/curated-2025-08-18.json)
-  --max-files N        Max files per project (default: analyze all)
   --model MODEL        Model to use for analysis (default: gpt-5-mini)
                        Examples: gpt-5-mini, gpt-4o-mini, gpt-4o
   --skip-checkout      Skip source checkout (use existing sources)
@@ -74,9 +71,6 @@ Examples:
   # Run everything for all projects
   $0
 
-  # Limit to 20 files per project for faster testing
-  $0 --max-files 20
-
   # Skip checkout if sources already exist
   $0 --skip-checkout
 
@@ -84,7 +78,7 @@ Examples:
   $0 --dataset my_dataset.json
 
   # Use faster model for testing
-  $0 --model gpt-4o-mini --max-files 20
+  $0 --model gpt-4o-mini
 
 Environment:
   OPENAI_API_KEY must be set
@@ -104,10 +98,6 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --dataset)
             DATASET="$2"
-            shift 2
-            ;;
-        --max-files)
-            MAX_FILES="$2"
             shift 2
             ;;
         --model)
@@ -177,7 +167,6 @@ print_header "ScaBench Run All - Processing $PROJECT_COUNT Projects"
 echo "Dataset:          $DATASET"
 echo "Output Directory: $OUTPUT_DIR"
 echo "Model:            $MODEL"
-echo "Max Files:        ${MAX_FILES:-all}"
 echo ""
 echo "Pipeline Steps:"
 [ "$SKIP_CHECKOUT" = false ] && echo "  ✓ Source Checkout" || echo "  ✗ Source Checkout (skipped)"
@@ -234,7 +223,6 @@ with open('$DATASET', 'r') as f:
         CMD="$CMD --source \"$SOURCE_DIR\""
         CMD="$CMD --output \"$BASELINE_DIR\""
         CMD="$CMD --model $MODEL"
-        [ -n "$MAX_FILES" ] && CMD="$CMD --max-files $MAX_FILES"
         
         if eval $CMD; then
             print_color $GREEN "  ✓ Analysis complete for $PROJECT_ID"

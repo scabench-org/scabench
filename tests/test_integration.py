@@ -455,7 +455,6 @@ class TestIntegration:
         result = runner.analyze_project(
             "test_project",
             source_dir,
-            max_files=10,
             file_patterns=["*.sol"]
         )
         

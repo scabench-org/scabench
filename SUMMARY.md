@@ -31,7 +31,7 @@ benchmarks/scabench/
 - JSON output format compatible with scoring tool
 
 #### Scorer (`scoring/scorer.py`)
-- **EXTREMELY STRICT** matching policy (confidence = 1.0 only)
+- **STRICT** matching policy (confidence = 1.0 only)
 - LLM-based intelligent matching with justifications
 - Detailed dismissal reasons for non-matches
 - Tracks true positives, false negatives, false positives

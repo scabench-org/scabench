@@ -466,8 +466,8 @@ Examples:
     console.print(Panel.fit(
         "[bold cyan]SCABENCH SCORER[/bold cyan]\n"
         f"[bold yellow]Model: {config.get('model', 'gpt-5-mini')}[/bold yellow]\n\n"
-        "[bold red]USING EXTREMELY STRICT MATCHING CRITERIA[/bold red]\n"
-        "[yellow]Only PERFECT matches count as true positives[/yellow]",
+        "[bold red]USING STRICT MATCHING CRITERIA[/bold red]\n"
+        "[yellow]Only slight variations are allowed[/yellow]",
         border_style="cyan"
     ))
     

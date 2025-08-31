@@ -220,7 +220,7 @@ Options:
 
 **Step 3: Scoring**
 - Compares findings against known vulnerabilities in the dataset
-- Uses EXTREMELY STRICT matching (confidence = 1.0 only)
+- Uses STRICT matching (confidence = 1.0 only)
 - Batch processes all projects
 - Creates: `OUTPUT_DIR/scoring_results/score_PROJECT_ID.json`
 

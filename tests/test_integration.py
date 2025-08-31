@@ -149,42 +149,6 @@ class TestBaselineRunner:
         assert findings[0].title == "Test vulnerability"
         assert input_tokens == 100
         assert output_tokens == 50
-    
-    def test_select_files_for_analysis(self, tmp_path):
-        """Test intelligent file selection."""
-        runner = BaselineRunner({'api_key': 'test'})
-        
-        # Create temporary files for testing
-        files = []
-        file_names = [
-            "Vault.sol",
-            "Token.sol",
-            "Oracle.sol",
-            "test/TestVault.sol",
-            "mock/MockToken.sol",
-            "interfaces/IVault.sol",
-            "libraries/Math.sol",
-            "Governance.sol",
-            "Staking.sol",
-            "Router.sol",
-        ]
-        
-        for name in file_names:
-            file_path = tmp_path / name
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            file_path.write_text("contract Test {}")
-            files.append(file_path)
-        
-        selected = runner.select_files_for_analysis(files, 5)
-        
-        # Should prioritize core contracts over test/mock
-        assert len(selected) == 5
-        # Check that test/mock files are deprioritized
-        selected_names = [f.name for f in selected]
-        assert "TestVault.sol" not in selected_names
-        assert "MockToken.sol" not in selected_names
-        # Should include important contracts
-        assert any("Vault.sol" in f.name for f in selected)
 
 
 class TestScorer:

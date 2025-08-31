@@ -36,19 +36,6 @@ class Severity(str, Enum):
     LOW = "low"
 
 
-class VulnerabilityType(str, Enum):
-    """Common vulnerability types."""
-    REENTRANCY = "reentrancy"
-    ACCESS_CONTROL = "access control"
-    INTEGER_OVERFLOW = "integer overflow/underflow"
-    DIVISION_BY_ZERO = "division by zero"
-    INPUT_VALIDATION = "input validation"
-    DOS = "denial of service"
-    NUMERIC_ERROR = "numeric error"
-    LOGIC_ERROR = "logic error"
-    OTHER = "other"
-
-
 @dataclass
 class Finding:
     """A security vulnerability finding."""

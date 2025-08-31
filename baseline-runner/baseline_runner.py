@@ -229,7 +229,7 @@ Identify and report security vulnerabilities found."""
                 files.extend(source_dir.glob(pattern))
         else:
             # Default to common smart contract patterns
-            patterns = ['**/*.sol', '**/*.vy', '**/*.cairo', '**/*.rs']
+            patterns = ['**/*.sol', '**/*.vy', '**/*.cairo', '**/*.rs', '**/*.move']
             files = []
             for pattern in patterns:
                 files.extend(source_dir.glob(pattern))

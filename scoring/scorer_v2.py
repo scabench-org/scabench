@@ -55,12 +55,14 @@ class ScaBenchScorerV2:
         # Use gpt-4o-mini for cost-effectiveness and good performance
         self.model = self.config.get('model', 'gpt-4o-mini')
         self.api_key = self.config.get('api_key') or os.getenv("OPENAI_API_KEY")
+        self.confidence_threshold = self.config.get('confidence_threshold', 0.75)
         
         if not self.api_key:
             raise ValueError("OpenAI API key not provided. Set OPENAI_API_KEY environment variable.")
         
         self.client = OpenAI(api_key=self.api_key)
         self.debug = self.config.get('debug', False)
+        self.verbose = self.config.get('verbose', False)
     
     def find_match_in_results(self, expected: Dict, tool_findings: List[Dict]) -> Tuple[bool, Optional[Dict], str]:
         """
@@ -105,8 +107,15 @@ Answer with a JSON object:
 }}
 
 If found, provide the index of the BEST matching finding.
-Use confidence=1.0 ONLY for perfect matches.
-When in doubt, return found=false."""
+Return confidence between 0.0-1.0 based on match quality:
+- 1.0 = Perfect match (same vulnerability, location, cause)
+- 0.9 = Very strong match (minor wording differences)
+- 0.8 = Strong match (same issue, slight variations)
+- 0.7 = Good match (clearly the same vulnerability)
+- 0.6 = Moderate match (likely same, some uncertainty)
+- Below 0.5 = Poor match or different vulnerability
+
+When in doubt, lean towards lower confidence."""
 
         try:
             response = self.client.chat.completions.create(
@@ -122,12 +131,19 @@ When in doubt, return found=false."""
             
             result = json.loads(response.choices[0].message.content)
             
-            if result.get('found', False) and result.get('confidence', 0) == 1.0:
+            if self.verbose:
+                console.print(f"[yellow]LLM Response:[/yellow] found={result.get('found')}, "
+                            f"confidence={result.get('confidence', 0):.2f}, "
+                            f"index={result.get('matching_index')}, "
+                            f"reason={result.get('reason', 'N/A')[:100]}")
+            
+            confidence = result.get('confidence', 0)
+            if result.get('found', False) and confidence >= self.confidence_threshold:
                 match_idx = result.get('matching_index')
                 if match_idx is not None and 0 <= match_idx < len(tool_findings):
-                    return True, tool_findings[match_idx], result.get('reason', 'No reason provided')
+                    return True, tool_findings[match_idx], result.get('reason', 'No reason provided'), confidence
             
-            return False, None, result.get('reason', 'Not found')
+            return False, None, result.get('reason', 'Not found'), confidence
             
         except Exception as e:
             if self.debug:
@@ -177,7 +193,10 @@ When in doubt, return found=false."""
                 
                 # Check if this expected finding matches any unmatched tool finding
                 if unmatched_findings:
-                    is_match, matched_finding, reason = self.find_match_in_results(
+                    if self.verbose:
+                        console.print(f"\n[cyan]Checking:[/cyan] {expected.get('title', 'Unknown')[:80]}...")
+                    
+                    is_match, matched_finding, reason, confidence = self.find_match_in_results(
                         expected, 
                         [f for _, f in unmatched_findings]
                     )
@@ -196,7 +215,7 @@ When in doubt, return found=false."""
                                 'id': f"{project_name}_expected_{exp_idx:03d}",
                                 'expected': expected.get('title', 'Unknown'),
                                 'matched': matched_finding.get('title', 'Unknown'),
-                                'confidence': 1.0,
+                                'confidence': confidence,
                                 'justification': reason,
                                 'severity': expected.get('severity', 'unknown'),
                                 'expected_description': expected.get('description', ''),
@@ -206,8 +225,8 @@ When in doubt, return found=false."""
                             })
                             matched_tool_indices.add(tool_idx)
                             
-                            if self.debug:
-                                console.print(f"[green]✓ Matched:[/green] {expected.get('title', 'Unknown')}")
+                            if self.debug or self.verbose:
+                                console.print(f"[green]✓ Matched[/green] (confidence={confidence:.2f}): {expected.get('title', 'Unknown')[:60]}")
                         else:
                             # Shouldn't happen but handle gracefully
                             missed_findings.append({
@@ -227,8 +246,8 @@ When in doubt, return found=false."""
                             'reason': reason or 'Not detected by tool'
                         })
                         
-                        if self.debug:
-                            console.print(f"[red]✗ Missed:[/red] {expected.get('title', 'Unknown')}")
+                        if self.debug or self.verbose:
+                            console.print(f"[red]✗ Missed[/red] (confidence={confidence:.2f}): {expected.get('title', 'Unknown')[:60]}")
                 else:
                     # No unmatched findings left to check
                     missed_findings.append({
@@ -301,8 +320,10 @@ def main():
     parser.add_argument('--results-dir', required=True, help='Directory containing tool results')
     parser.add_argument('--output', default='scoring_results', help='Output directory')
     parser.add_argument('--project', help='Score only a specific project')
-    parser.add_argument('--model', default='gpt-4o', help='OpenAI model to use')
+    parser.add_argument('--model', default='gpt-4o-mini', help='OpenAI model to use')
     parser.add_argument('--debug', action='store_true', help='Enable debug output')
+    parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
+    parser.add_argument('--confidence-threshold', type=float, default=0.75, help='Confidence threshold for matches (default: 0.75)')
     
     args = parser.parse_args()
     
@@ -317,9 +338,14 @@ def main():
     # Initialize scorer
     config = {
         'model': args.model,
-        'debug': args.debug
+        'debug': args.debug,
+        'verbose': args.verbose,
+        'confidence_threshold': args.confidence_threshold
     }
     scorer = ScaBenchScorerV2(config)
+    
+    if args.verbose:
+        console.print(f"[cyan]Using confidence threshold: {args.confidence_threshold}[/cyan]")
     
     # Find results files
     results_dir = Path(args.results_dir)

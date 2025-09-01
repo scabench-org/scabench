@@ -51,36 +51,78 @@ class ReportGenerator:
         """Generate compact inline SVG charts."""
         charts = {}
         
-        # Detection rate pie chart
+        # Detection rate circular progress chart
         detection_rate = data['overall_stats']['detection_rate']
+        # Calculate the circumference for proper animation
+        radius = 15.9155
+        circumference = 2 * 3.14159 * radius
+        offset = circumference - (detection_rate / 100 * circumference)
+        
+        # Determine color based on detection rate
+        if detection_rate >= 70:
+            stroke_color = '#10b981'  # Green
+        elif detection_rate >= 40:
+            stroke_color = '#f59e0b'  # Orange
+        else:
+            stroke_color = '#ef4444'  # Red
+        
         charts['detection_pie'] = f"""
         <svg viewBox="0 0 36 36" class="circular-chart">
-            <path class="circle-bg" d="M18 2.0845
-                a 15.9155 15.9155 0 0 1 0 31.831
-                a 15.9155 15.9155 0 0 1 0 -31.831" />
-            <path class="circle" stroke-dasharray="{detection_rate}, 100" d="M18 2.0845
-                a 15.9155 15.9155 0 0 1 0 31.831
-                a 15.9155 15.9155 0 0 1 0 -31.831" />
-            <text x="18" y="21" class="percentage">{detection_rate:.1f}%</text>
+            <!-- Background circle -->
+            <circle cx="18" cy="18" r="{radius}"
+                fill="none"
+                stroke="#f3f4f6"
+                stroke-width="2.5" />
+            
+            <!-- Progress circle -->
+            <circle cx="18" cy="18" r="{radius}"
+                fill="none"
+                stroke="{stroke_color}"
+                stroke-width="3"
+                stroke-dasharray="{circumference}"
+                stroke-dashoffset="{offset}"
+                stroke-linecap="round"
+                transform="rotate(-90 18 18)"
+                style="transition: stroke-dashoffset 1s ease-in-out;" />
+            
+            <!-- Inner circle for visual depth -->
+            <circle cx="18" cy="18" r="13"
+                fill="white"
+                opacity="0.1" />
+            
+            <!-- Percentage text -->
+            <text x="18" y="18" class="percentage" 
+                text-anchor="middle" 
+                dy=".3em"
+                fill="{stroke_color}"
+                font-size="7"
+                font-weight="bold">{detection_rate:.1f}%</text>
         </svg>
         """
         
-        # Severity distribution bar chart
+        # Severity distribution bar chart with both expected and found
         severity_data = data['severity_stats']
         max_val = max([severity_data.get(s, {}).get('expected', 0) 
                       for s in ['critical', 'high', 'medium', 'low']] + [1])
         
         charts['severity_bars'] = """<div class="mini-bar-chart">"""
-        for sev, color in [('critical', '#e74c3c'), ('high', '#f39c12'), 
-                          ('medium', '#3498db'), ('low', '#95a5a6')]:
-            val = severity_data.get(sev, {}).get('expected', 0)
-            height = (val / max_val * 100) if max_val > 0 else 0
+        for sev, color in [('critical', '#ef4444'), ('high', '#f59e0b'), 
+                          ('medium', '#3b82f6'), ('low', '#6b7280')]:
+            expected = severity_data.get(sev, {}).get('expected', 0)
+            found = severity_data.get(sev, {}).get('found', 0)
+            height = (expected / max_val * 100) if max_val > 0 else 0
+            found_height = (found / expected * 100) if expected > 0 else 0
+            
             charts['severity_bars'] += f"""
             <div class="bar-wrapper">
-                <div class="bar" style="height: {height}%; background: {color};">
-                    <span class="bar-value">{val}</span>
+                <div class="bar-container" style="height: {height}%;">
+                    <div class="bar-expected" style="background: {color}20; border: 2px solid {color};">
+                        <div class="bar-found" style="height: {found_height}%; background: {color};">
+                            <span class="bar-value">{found}/{expected}</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="bar-label">{sev[0].upper()}</div>
+                <div class="bar-label">{sev.capitalize()}</div>
             </div>
             """
         charts['severity_bars'] += "</div>"
@@ -456,40 +498,37 @@ class ReportGenerator:
             
             /* Mini Charts */
             .circular-chart {
-                width: 120px;
-                height: 120px;
+                width: 140px;
+                height: 140px;
+                filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1));
+                animation: fadeIn 0.6s ease-out;
             }
             
-            .circle-bg {
-                fill: none;
-                stroke: #eee;
-                stroke-width: 3.8;
-            }
-            
-            .circle {
-                fill: none;
-                stroke: url(#gradient);
-                stroke-width: 3.8;
-                stroke-linecap: round;
-                transform: rotate(-90deg);
-                transform-origin: center;
-                animation: progress 1s ease-out forwards;
+            .circular-chart circle {
+                animation: drawCircle 1.5s ease-out forwards;
             }
             
             .percentage {
-                fill: var(--dark);
-                font-size: 0.5em;
-                text-anchor: middle;
-                font-weight: 700;
+                animation: fadeIn 1s ease-out 0.5s both;
+            }
+            
+            @keyframes drawCircle {
+                from {
+                    stroke-dashoffset: 100;
+                    opacity: 0;
+                }
+                to {
+                    opacity: 1;
+                }
             }
             
             .mini-bar-chart {
                 display: flex;
                 justify-content: space-around;
                 align-items: flex-end;
-                height: 120px;
+                height: 140px;
                 padding: 10px;
-                gap: 10px;
+                gap: 15px;
             }
             
             .bar-wrapper {
@@ -498,35 +537,57 @@ class ReportGenerator:
                 flex-direction: column;
                 align-items: center;
                 justify-content: flex-end;
+                height: 100%;
             }
             
-            .bar {
+            .bar-container {
                 width: 100%;
-                border-radius: 4px 4px 0 0;
-                position: relative;
-                transition: all 0.3s ease;
                 display: flex;
-                align-items: flex-start;
-                justify-content: center;
-                padding-top: 5px;
-                animation: grow 0.8s ease-out;
+                align-items: flex-end;
+                position: relative;
             }
             
-            .bar:hover {
-                opacity: 0.8;
+            .bar-expected {
+                width: 100%;
+                height: 100%;
+                border-radius: 8px 8px 0 0;
+                position: relative;
+                overflow: hidden;
+                display: flex;
+                align-items: flex-end;
+                transition: all 0.3s ease;
+            }
+            
+            .bar-found {
+                width: 100%;
+                border-radius: 6px 6px 0 0;
+                position: relative;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                animation: grow 1.2s ease-out;
+                transition: all 0.3s ease;
+            }
+            
+            .bar-wrapper:hover .bar-found {
+                filter: brightness(1.1);
+                transform: translateY(-2px);
             }
             
             .bar-value {
                 color: white;
-                font-weight: 600;
-                font-size: 0.875rem;
+                font-weight: 700;
+                font-size: 0.7rem;
+                text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+                white-space: nowrap;
             }
             
             .bar-label {
-                margin-top: 5px;
+                margin-top: 8px;
                 font-size: 0.75rem;
                 font-weight: 600;
                 color: var(--dark);
+                text-align: center;
             }
             
             /* Projects Section */

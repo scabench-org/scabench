@@ -169,21 +169,9 @@ When in doubt, lean towards lower confidence."""
         extra_findings = tool_findings.copy()  # Start with all as extra
         matched_tool_indices = set()
         
-        # Progress bar for matching
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
-            TaskProgressColumn(),
-            console=console
-        ) as progress:
-            
-            task = progress.add_task(
-                f"Matching {len(expected_findings)} expected findings...", 
-                total=len(expected_findings)
-            )
-            
-            # For each expected finding, check if it exists in tool findings
+        # Progress bar for matching (only if not verbose)
+        if self.verbose:
+            # No progress bar in verbose mode to avoid flickering
             for exp_idx, expected in enumerate(expected_findings):
                 # Get remaining unmatched tool findings
                 unmatched_findings = [
@@ -257,8 +245,94 @@ When in doubt, lean towards lower confidence."""
                         'severity': expected.get('severity', 'unknown'),
                         'reason': 'No unmatched tool findings remaining'
                     })
+        else:
+            # Use progress bar when not in verbose mode
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                console=console
+            ) as progress:
                 
-                progress.advance(task)
+                task = progress.add_task(
+                    f"Matching {len(expected_findings)} expected findings...", 
+                    total=len(expected_findings)
+                )
+                
+                # For each expected finding, check if it exists in tool findings
+                for exp_idx, expected in enumerate(expected_findings):
+                    # Get remaining unmatched tool findings
+                    unmatched_findings = [
+                        (idx, finding) for idx, finding in enumerate(tool_findings)
+                        if idx not in matched_tool_indices
+                    ]
+                    
+                    # Check if this expected finding matches any unmatched tool finding
+                    if unmatched_findings:
+                        is_match, matched_finding, reason, confidence = self.find_match_in_results(
+                            expected, 
+                            [f for _, f in unmatched_findings]
+                        )
+                        
+                        if is_match and matched_finding:
+                            # Find the original index of the matched finding
+                            tool_idx = None
+                            for orig_idx, (idx, finding) in enumerate(unmatched_findings):
+                                if finding == matched_finding:
+                                    tool_idx = idx
+                                    break
+                            
+                            if tool_idx is not None:
+                                # Record the match
+                                matched_findings.append({
+                                    'id': f"{project_name}_expected_{exp_idx:03d}",
+                                    'expected': expected.get('title', 'Unknown'),
+                                    'matched': matched_finding.get('title', 'Unknown'),
+                                    'confidence': confidence,
+                                    'justification': reason,
+                                    'severity': expected.get('severity', 'unknown'),
+                                    'expected_description': expected.get('description', ''),
+                                    'found_description': matched_finding.get('description', ''),
+                                    'found_id': matched_finding.get('id', ''),
+                                    'tool_finding_index': tool_idx
+                                })
+                                matched_tool_indices.add(tool_idx)
+                                
+                                if self.debug:
+                                    console.print(f"[green]✓ Matched[/green] (confidence={confidence:.2f}): {expected.get('title', 'Unknown')[:60]}")
+                            else:
+                                # Shouldn't happen but handle gracefully
+                                missed_findings.append({
+                                    'id': f"{project_name}_expected_{exp_idx:03d}",
+                                    'title': expected.get('title', 'Unknown'),
+                                    'description': expected.get('description', ''),
+                                    'severity': expected.get('severity', 'unknown'),
+                                    'reason': 'Match found but index lost'
+                                })
+                        else:
+                            # No match found
+                            missed_findings.append({
+                                'id': f"{project_name}_expected_{exp_idx:03d}",
+                                'title': expected.get('title', 'Unknown'),
+                                'description': expected.get('description', ''),
+                                'severity': expected.get('severity', 'unknown'),
+                                'reason': reason or 'Not detected by tool'
+                            })
+                            
+                            if self.debug:
+                                console.print(f"[red]✗ Missed[/red] (confidence={confidence:.2f}): {expected.get('title', 'Unknown')[:60]}")
+                    else:
+                        # No unmatched findings left to check
+                        missed_findings.append({
+                            'id': f"{project_name}_expected_{exp_idx:03d}",
+                            'title': expected.get('title', 'Unknown'),
+                            'description': expected.get('description', ''),
+                            'severity': expected.get('severity', 'unknown'),
+                            'reason': 'No unmatched tool findings remaining'
+                        })
+                    
+                    progress.advance(task)
         
         # Identify extra findings (false positives)
         extra_findings = []

@@ -76,6 +76,7 @@ class BaselineRunner:
         """Initialize the baseline runner with optional configuration."""
         self.config = config or {}
         self.model = self.config.get('model', 'gpt-5-mini')
+        self.reasoning_effort = self.config.get('reasoning_effort', 'high')  # Default to high for baseline
         self.api_key = self.config.get('api_key') or os.getenv("OPENAI_API_KEY")
         
         if not self.api_key:
@@ -147,7 +148,8 @@ Identify and report security vulnerabilities found."""
             # Add reasoning_effort for supported models
             extra_params = {}
             if self.model in ['gpt-5-mini', 'gpt-5']:
-                extra_params['reasoning_effort'] = 'medium'
+                # Use configured reasoning effort for baseline analysis
+                extra_params['reasoning_effort'] = self.reasoning_effort
             
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -389,6 +391,9 @@ Examples:
                        help='Output directory for results (default: baseline_results)')
     parser.add_argument('--model', '-m', default='gpt-5-mini',
                        help='OpenAI model to use (default: gpt-5-mini)')
+    parser.add_argument('--reasoning-effort', default='high',
+                       choices=['low', 'medium', 'high'],
+                       help='Reasoning effort level for supported models (default: high)')
     parser.add_argument('--patterns', nargs='+', metavar='PATTERN',
                        help='File patterns to analyze (e.g., "*.sol" "contracts/*.vy")')
     parser.add_argument('--api-key', help='OpenAI API key (or set OPENAI_API_KEY env var)')
@@ -407,11 +412,14 @@ Examples:
         config['model'] = args.model
     if args.api_key:
         config['api_key'] = args.api_key
+    if hasattr(args, 'reasoning_effort'):
+        config['reasoning_effort'] = args.reasoning_effort
     
     # Print header
     console.print(Panel.fit(
         "[bold cyan]SCABENCH BASELINE RUNNER[/bold cyan]\n"
-        f"[dim]Model: {config.get('model', 'gpt-5-mini')}[/dim]",
+        f"[dim]Model: {config.get('model', 'gpt-5-mini')}[/dim]\n"
+        f"[dim]Reasoning: {config.get('reasoning_effort', 'high')}[/dim]",
         border_style="cyan"
     ))
     

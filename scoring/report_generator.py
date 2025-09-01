@@ -156,16 +156,29 @@ class ReportGenerator:
         return badges_html
     
     def generate_report(self, 
-                       scores_dir: Path,
+                       scores_path: Path,
                        benchmark_file: Optional[Path] = None,
                        output_file: Path = Path("report.html")) -> Path:
-        """Generate HTML report from scoring results."""
+        """Generate HTML report from scoring results (single file or directory)."""
         console.print("Generating ScaBench report...")
         
-        # Load all scoring results
-        score_files = list(scores_dir.glob("score_*.json"))
-        if not score_files:
-            console.print(f"[red]No score files found in {scores_dir}[/red]")
+        # Determine if scores_path is a file or directory
+        score_files = []
+        if scores_path.is_file():
+            # Single score file provided
+            if scores_path.name.endswith('.json'):
+                score_files = [scores_path]
+            else:
+                console.print(f"[red]Invalid file: {scores_path} (must be .json)[/red]")
+                sys.exit(1)
+        elif scores_path.is_dir():
+            # Directory provided - look for score files
+            score_files = list(scores_path.glob("score_*.json"))
+            if not score_files:
+                console.print(f"[red]No score_*.json files found in {scores_path}[/red]")
+                sys.exit(1)
+        else:
+            console.print(f"[red]Path not found: {scores_path}[/red]")
             sys.exit(1)
         
         all_scores = []
@@ -707,16 +720,15 @@ class ReportGenerator:
             }
             
             .project-details {
-                max-height: 0;
-                overflow: hidden;
-                transition: max-height 0.3s ease;
+                display: none;
+                transition: all 0.3s ease;
             }
             
             .project-card.expanded .project-details {
-                max-height: 2000px;
+                display: block;
             }
             
-            .details-content {
+            .project-details .details-wrapper {
                 padding: 1.5rem;
                 border-top: 1px solid var(--border);
             }
@@ -790,6 +802,79 @@ class ReportGenerator:
             
             .finding-card:hover {
                 box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            }
+            
+            /* Expandable details */
+            .details-toggle {
+                cursor: pointer;
+                color: var(--primary);
+                font-size: 0.9rem;
+                margin-top: 0.5rem;
+                display: inline-flex;
+                align-items: center;
+                gap: 0.3rem;
+                transition: color 0.2s;
+            }
+            
+            .details-toggle:hover {
+                color: var(--primary-dark);
+            }
+            
+            .details-toggle::before {
+                content: '▶';
+                display: inline-block;
+                transition: transform 0.2s;
+            }
+            
+            .details-toggle.expanded::before {
+                transform: rotate(90deg);
+            }
+            
+            .details-content {
+                display: none;
+                margin-top: 1rem;
+                padding-top: 1rem;
+                border-top: 1px solid var(--border);
+            }
+            
+            .details-content.show {
+                display: block;
+                animation: slideDown 0.3s ease;
+            }
+            
+            @keyframes slideDown {
+                from {
+                    opacity: 0;
+                    transform: translateY(-10px);
+                }
+                to {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+            
+            .detail-section {
+                margin-bottom: 1rem;
+            }
+            
+            .detail-section h4 {
+                color: #4b5563;
+                font-size: 0.9rem;
+                font-weight: 600;
+                margin-bottom: 0.5rem;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }
+            
+            .detail-section .content {
+                background: #f9fafb;
+                padding: 0.75rem;
+                border-radius: 6px;
+                font-size: 0.9rem;
+                line-height: 1.6;
+                color: #374151;
+                white-space: pre-wrap;
+                word-wrap: break-word;
             }
             
             .finding-header {
@@ -948,8 +1033,14 @@ class ReportGenerator:
         <script>
             // Toggle project details
             function toggleProject(element) {
+                console.log('Toggle clicked');
                 const card = element.closest('.project-card');
+                if (!card) {
+                    console.error('Could not find project-card');
+                    return;
+                }
                 card.classList.toggle('expanded');
+                console.log('Card expanded:', card.classList.contains('expanded'));
             }
             
             // Tab switching
@@ -967,6 +1058,20 @@ class ReportGenerator:
                     content.classList.remove('active');
                 });
                 project.querySelector(`.tab-content[data-tab="${tabName}"]`).classList.add('active');
+            }
+            
+            // Toggle details expansion for findings
+            function toggleDetails(id) {
+                const content = document.getElementById(id);
+                const toggle = content.previousElementSibling;
+                
+                if (content.classList.contains('show')) {
+                    content.classList.remove('show');
+                    toggle.classList.remove('expanded');
+                } else {
+                    content.classList.add('show');
+                    toggle.classList.add('expanded');
+                }
             }
             
             // Filter projects
@@ -1165,7 +1270,7 @@ class ReportGenerator:
                     </div>
                 </div>
                 <div class="project-details">
-                    <div class="details-content">
+                    <div class="details-wrapper">
                         <div class="tabs">
                             <button class="tab active" onclick="switchTab('{project_id}', 'matched')">
                                 Matched<span class="tab-badge">{score['true_positives']}</span>
@@ -1185,19 +1290,57 @@ class ReportGenerator:
             # Matched findings tab
             html_parts.append('<div class="tab-content active" data-tab="matched">')
             if score['matched_findings']:
-                for match in score['matched_findings']:
+                for idx, match in enumerate(score['matched_findings']):
                     severity = match.get('severity', 'unknown').lower()
+                    confidence = match.get('confidence', 1.0)
+                    finding_id = match.get('id', f'{project_id}_match_{idx}')
+                    
+                    # Escape descriptions for HTML
+                    import html as html_lib
+                    expected_desc = html_lib.escape(match.get('expected_description', 'No description available'))
+                    found_desc = html_lib.escape(match.get('found_description', 'No description available'))
+                    matched_title = html_lib.escape(match.get('matched', 'Unknown'))
+                    
                     html_parts.append(f'''
                     <div class="finding-card">
                         <div class="finding-header">
                             <div class="finding-title">
                                 {match.get('expected', 'Unknown')}
-                                <span class="confidence-indicator">100% Match</span>
+                                <span class="confidence-indicator">{int(confidence*100)}% Match</span>
                             </div>
                             <span class="severity-badge severity-{severity}">{severity}</span>
                         </div>
                         <div class="justification-box">
                             <strong>Justification:</strong> {match.get('justification', 'No justification provided')}
+                        </div>
+                        <span class="details-toggle" onclick="toggleDetails('{finding_id}')">
+                            View Full Descriptions
+                        </span>
+                        <div id="{finding_id}" class="details-content">
+                            <div class="detail-section">
+                                <h4>Expected Finding</h4>
+                                <div class="content">
+                                    <strong>Title:</strong> {match.get('expected', 'Unknown')}<br><br>
+                                    <strong>Description:</strong><br>
+                                    {expected_desc}
+                                </div>
+                            </div>
+                            <div class="detail-section">
+                                <h4>Tool Finding (Matched)</h4>
+                                <div class="content">
+                                    <strong>Title:</strong> {matched_title}<br><br>
+                                    <strong>Description:</strong><br>
+                                    {found_desc}
+                                </div>
+                            </div>
+                            <div class="detail-section">
+                                <h4>Match Details</h4>
+                                <div class="content">
+                                    <strong>Finding ID:</strong> {finding_id}<br>
+                                    <strong>Confidence:</strong> {confidence:.2f}<br>
+                                    <strong>Tool Finding Index:</strong> {match.get('tool_finding_index', 'N/A')}
+                                </div>
+                            </div>
                         </div>
                     </div>
                     ''')
@@ -1208,8 +1351,14 @@ class ReportGenerator:
             # Missed findings tab
             html_parts.append('<div class="tab-content" data-tab="missed">')
             if score['missed_findings']:
-                for miss in score['missed_findings']:
+                for idx, miss in enumerate(score['missed_findings']):
                     severity = miss.get('severity', 'unknown').lower()
+                    finding_id = miss.get('id', f'{project_id}_miss_{idx}')
+                    
+                    # Escape description for HTML
+                    import html as html_lib
+                    description = html_lib.escape(miss.get('description', 'No description available'))
+                    
                     html_parts.append(f'''
                     <div class="finding-card">
                         <div class="finding-header">
@@ -1218,6 +1367,27 @@ class ReportGenerator:
                         </div>
                         <div class="justification-box">
                             <strong>Reason:</strong> {miss.get('reason', 'Not detected by tool')}
+                        </div>
+                        <span class="details-toggle" onclick="toggleDetails('{finding_id}_miss')">
+                            View Full Description
+                        </span>
+                        <div id="{finding_id}_miss" class="details-content">
+                            <div class="detail-section">
+                                <h4>Expected Finding Description</h4>
+                                <div class="content">
+                                    <strong>Title:</strong> {miss.get('title', 'Unknown')}<br><br>
+                                    <strong>Description:</strong><br>
+                                    {description}
+                                </div>
+                            </div>
+                            <div class="detail-section">
+                                <h4>Detection Details</h4>
+                                <div class="content">
+                                    <strong>Finding ID:</strong> {finding_id}<br>
+                                    <strong>Status:</strong> Not Detected<br>
+                                    <strong>Reason:</strong> {miss.get('reason', 'Not detected by tool')}
+                                </div>
+                            </div>
                         </div>
                     </div>
                     ''')
@@ -1228,13 +1398,40 @@ class ReportGenerator:
             # Extra findings tab
             html_parts.append('<div class="tab-content" data-tab="extra">')
             if score['extra_findings']:
-                for extra in score['extra_findings']:
+                for idx, extra in enumerate(score['extra_findings']):
                     severity = extra.get('severity', 'unknown').lower()
+                    finding_id = extra.get('id', f'{project_id}_extra_{idx}')
+                    
+                    # Escape description for HTML
+                    import html as html_lib
+                    description = html_lib.escape(extra.get('description', 'No description available'))
+                    
                     html_parts.append(f'''
                     <div class="finding-card">
                         <div class="finding-header">
                             <div class="finding-title">{extra.get('title', 'Unknown')}</div>
                             <span class="severity-badge severity-{severity}">{severity}</span>
+                        </div>
+                        <span class="details-toggle" onclick="toggleDetails('{finding_id}_extra')">
+                            View Full Description
+                        </span>
+                        <div id="{finding_id}_extra" class="details-content">
+                            <div class="detail-section">
+                                <h4>Tool Finding Description</h4>
+                                <div class="content">
+                                    <strong>Title:</strong> {extra.get('title', 'Unknown')}<br><br>
+                                    <strong>Description:</strong><br>
+                                    {description}
+                                </div>
+                            </div>
+                            <div class="detail-section">
+                                <h4>Detection Details</h4>
+                                <div class="content">
+                                    <strong>Finding ID:</strong> {finding_id}<br>
+                                    <strong>Original ID:</strong> {extra.get('original_id', 'N/A')}<br>
+                                    <strong>Status:</strong> False Positive (not in expected findings)
+                                </div>
+                            </div>
                         </div>
                     </div>
                     ''')
@@ -1289,7 +1486,7 @@ class ReportGenerator:
 
 def main():
     parser = argparse.ArgumentParser(description='Generate ScaBench HTML reports')
-    parser.add_argument('--scores', required=True, help='Directory containing score JSON files')
+    parser.add_argument('--scores', required=True, help='Path to score JSON file or directory containing score_*.json files')
     parser.add_argument('--output', default='report.html', help='Output HTML file')
     parser.add_argument('--tool-name', default='Security Analyzer', help='Name of the tool')
     parser.add_argument('--model', default='Not specified', help='Model used for analysis')

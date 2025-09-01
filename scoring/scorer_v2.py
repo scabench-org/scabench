@@ -394,7 +394,7 @@ def main():
     parser.add_argument('--results-dir', required=True, help='Directory containing tool results')
     parser.add_argument('--output', default='scoring_results', help='Output directory')
     parser.add_argument('--project', help='Score only a specific project')
-    parser.add_argument('--model', default='gpt-4o-mini', help='OpenAI model to use')
+    parser.add_argument('--model', default='gpt-4o', help='OpenAI model to use')
     parser.add_argument('--debug', action='store_true', help='Enable debug output')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
     parser.add_argument('--confidence-threshold', type=float, default=0.75, help='Confidence threshold for matches (default: 0.75)')

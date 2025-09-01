@@ -1550,10 +1550,10 @@
     "codebases": [
       {
         "codebase_id": "Initia Move_b36d06",
-        "repo_url": "https://github.com/initia-labs/minimove",
-        "commit": "b36d068a7faec31a59d56472e77a9785397f9663",
-        "tree_url": "https://github.com/initia-labs/minimove/tree/b36d068a7faec31a59d56472e77a9785397f9663",
-        "tarball_url": "https://github.com/initia-labs/minimove/archive/b36d068a7faec31a59d56472e77a9785397f9663.tar.gz"
+        "repo_url": "https://github.com/code-423n4/2025-01-initia-move",
+        "commit": "",
+        "tree_url": "",
+        "tarball_url": ""
       }
     ],
     "vulnerabilities": [

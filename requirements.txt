@@ -2,7 +2,7 @@
 # Python 3.8+ required
 
 # Core dependencies
-openai>=1.0.0
+llm>=0.1
 rich>=13.0.0
 
 # Optional for visualizations in reports

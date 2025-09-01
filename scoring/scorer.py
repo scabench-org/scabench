@@ -22,8 +22,8 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
 from rich import box
 
-# OpenAI for LLM matching
-from openai import OpenAI
+# LLM for intelligent matching
+import llm
 
 console = Console()
 
@@ -44,6 +44,38 @@ STRICT MATCHING REQUIREMENTS:
 Only assign confidence = 1.0 for PERFECT matches.
 Assign confidence < 1.0 for potential matches requiring review.
 """
+
+
+# JSON Schema for the expected LLM response
+MATCH_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "matches": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "expected_index": {"type": "integer"},
+                    "expected_title": {"type": "string"},
+                    "found_index": {"type": "integer"},
+                    "found_title": {"type": "string"},
+                    "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                    "justification": {"type": "string"},
+                    "dismissal_reasons": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": [
+                    "expected_index", "expected_title", "found_index", 
+                    "found_title", "confidence", "justification"
+                ],
+            },
+        },
+        "unmatched_found": {
+            "type": "array",
+            "items": {"type": "integer"},
+        },
+    },
+    "required": ["matches", "unmatched_found"],
+}
 
 
 @dataclass
@@ -82,13 +114,22 @@ class ScaBenchScorer:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the scorer with optional configuration."""
         self.config = config or {}
-        self.model = self.config.get('model', 'gpt-5-nano')  # Changed to gpt-5-mini for accuracy
+        self.model_id = self.config.get('model', 'gpt-4o-mini')
         self.api_key = self.config.get('api_key') or os.getenv("OPENAI_API_KEY")
-        
+
         if not self.api_key:
-            raise ValueError("OpenAI API key not provided. Set OPENAI_API_KEY environment variable.")
-        
-        self.client = OpenAI(api_key=self.api_key)
+            # llm will fall back to other key mechanisms, so this is not a fatal error
+            # We will pass the key to the prompt method if it exists.
+            pass
+
+        try:
+            self.model = llm.get_model(self.model_id)
+        except llm.UnknownModelError:
+            console.print(f"[red]Error: Model '{self.model_id}' not found. Is the plugin installed?[/red]")
+            raise
+        except Exception as e:
+            console.print(f"[red]Error initializing LLM model: {e}[/red]")
+            raise
     
     def batch_match_findings_with_llm(self, expected_findings: List[Dict], tool_findings: List[Dict]) -> Dict[str, Any]:
         """Use LLM to batch match all findings in a single call."""
@@ -129,45 +170,17 @@ REMEMBER:
 - When in doubt, DO NOT MATCH (confidence < 1.0)
 """
 
-        # Prefer OpenAI Responses API for gpt-5 family; fallback to Chat Completions
-        use_responses = str(self.model).lower().startswith("gpt-5")
+        system_prompt = "You are a security expert evaluating vulnerability matches with EXTREME strictness. Return ONLY valid JSON."
+        
         try:
-            if use_responses:
-                # Ask for a strict JSON object; let the server enforce JSON
-                resp = self.client.responses.create(
-                    model=self.model,
-                    input=prompt,
-                    instructions="Return ONLY valid JSON as specified.",
-                    text={"format": {"type": "json_object"}},
-                )
-                out = getattr(resp, 'output_text', None) or ""
-                return json.loads(out)
-            else:
-                completion = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {"role": "system", "content": "You are a security expert evaluating vulnerability matches with EXTREME strictness."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    response_format={"type": "json_object"},
-                    max_tokens=4000
-                )
-                content = completion.choices[0].message.content or ""
-                return json.loads(content)
+            response = self.model.prompt(
+                prompt,
+                system=system_prompt,
+                key=self.api_key,
+                schema=MATCH_SCHEMA
+            )
+            return json.loads(response.text())
         except Exception as e:
-            # Last‑chance fallback: try parsing any text chunks from Responses
-            try:
-                if use_responses and 'resp' in locals():
-                    chunks = []
-                    for item in getattr(resp, 'output', []) or []:
-                        for c in getattr(item, 'content', []) or []:
-                            t = getattr(c, 'text', None)
-                            if t and getattr(t, 'value', None):
-                                chunks.append(t.value)
-                    if chunks:
-                        return json.loads("\n".join(chunks))
-            except Exception:
-                pass
             console.print(f"[red]Error in batch LLM matching: {e}[/red]")
             # Return empty matches on error
             return {
@@ -437,8 +450,8 @@ Examples:
                        help='Specific project to score')
     parser.add_argument('--output', '-o', default='scoring_results',
                        help='Output directory for scores (default: scoring_results)')
-    parser.add_argument('--model', '-m', default='gpt-5-mini',
-                       help='OpenAI model for matching (default: gpt-5-mini)')
+    parser.add_argument('--model', '-m', default='gpt-4o-mini',
+                       help='LLM model for matching (default: gpt-4o-mini)')
     parser.add_argument('--api-key', help='OpenAI API key (or set OPENAI_API_KEY env var)')
     parser.add_argument('--verbose', '-v', action='store_true',
                        help='Show detailed matching justifications')
@@ -465,7 +478,7 @@ Examples:
     # Print header with strict policy reminder
     console.print(Panel.fit(
         "[bold cyan]SCABENCH SCORER[/bold cyan]\n"
-        f"[bold yellow]Model: {config.get('model', 'gpt-5-mini')}[/bold yellow]\n\n"
+        f"[bold yellow]Model: {config.get('model', 'gpt-4o-mini')}[/bold yellow]\n\n"
         "[bold red]USING STRICT MATCHING CRITERIA[/bold red]\n"
         "[yellow]Only slight variations are allowed[/yellow]",
         border_style="cyan"

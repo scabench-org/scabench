@@ -22,8 +22,8 @@ from rich.panel import Panel
 from rich.table import Table
 from rich import box
 
-# OpenAI for analysis
-from openai import OpenAI
+# LLM for analysis
+import llm
 
 console = Console()
 
@@ -49,7 +49,7 @@ class Finding:
     id: str = ""
     reported_by_model: str = ""
     status: str = "proposed"
-    
+
     def __post_init__(self):
         """Generate ID if not provided."""
         if not self.id:
@@ -71,18 +71,27 @@ class AnalysisResult:
 
 class BaselineRunner:
     """Main baseline analysis runner."""
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the baseline runner with optional configuration."""
         self.config = config or {}
-        self.model = self.config.get('model', 'gpt-5-mini')
+        self.model_id = self.config.get('model', 'gpt-4o-mini')
         self.api_key = self.config.get('api_key') or os.getenv("OPENAI_API_KEY")
-        
+
         if not self.api_key:
-            raise ValueError("OpenAI API key not provided. Set OPENAI_API_KEY environment variable.")
-        
-        self.client = OpenAI(api_key=self.api_key)
-    
+            # llm will fall back to other key mechanisms, so this is not a fatal error
+            # We will pass the key to the prompt method if it exists.
+            pass
+
+        try:
+            self.model = llm.get_model(self.model_id)
+        except llm.UnknownModelError:
+            console.print(f"[red]Error: Model '{self.model_id}' not found. Is the plugin installed?[/red]")
+            raise
+        except Exception as e:
+            console.print(f"[red]Error initializing LLM model: {e}[/red]")
+            raise
+
     def analyze_file(self, file_path: Path, content: str) -> tuple[List[Finding], int, int]:
         """Analyze a single file for security vulnerabilities.
         
@@ -144,28 +153,35 @@ File: {file_path.name}
 Identify and report security vulnerabilities found."""
 
         try:
-            # Add reasoning_effort for supported models
-            extra_params = {}
-            if self.model in ['gpt-5-mini', 'gpt-5']:
-                extra_params['reasoning_effort'] = 'medium'
-            
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                response_format={"type": "json_object"},
-                **extra_params
+            response = self.model.prompt(
+                user_prompt,
+                system=system_prompt,
+                key=self.api_key,
+                # Request a JSON response that conforms to a schema
+                schema={
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "description": {"type": "string"},
+                            "vulnerability_type": {"type": "string"},
+                            "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
+                            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                            "location": {"type": "string"},
+                        },
+                        "required": ["title", "description", "vulnerability_type", "severity", "confidence", "location"],
+                    },
+                },
             )
-            
+
             # Extract token usage
             usage = response.usage
-            input_tokens = usage.prompt_tokens if usage else 0
-            output_tokens = usage.completion_tokens if usage else 0
+            input_tokens = usage.prompt_tokens if hasattr(usage, 'prompt_tokens') else 0
+            output_tokens = usage.completion_tokens if hasattr(usage, 'completion_tokens') else 0
             
             # Parse response
-            result = json.loads(response.choices[0].message.content)
+            result = json.loads(response.text())
             
             # Handle different response formats
             findings_data = []
@@ -190,7 +206,7 @@ Identify and report security vulnerabilities found."""
                     confidence=f_data.get('confidence', 0.5),
                     location=f_data.get('location', 'unknown'),
                     file=str(file_path.name),
-                    reported_by_model=self.model
+                    reported_by_model=self.model.model_id
                 )
                 findings.append(finding)
             
@@ -387,8 +403,8 @@ Examples:
                        help='Source directory containing project files')
     parser.add_argument('--output', '-o', default='baseline_results',
                        help='Output directory for results (default: baseline_results)')
-    parser.add_argument('--model', '-m', default='gpt-5-mini',
-                       help='OpenAI model to use (default: gpt-5-mini)')
+    parser.add_argument('--model', '-m', default='gpt-4o-mini',
+                       help='LLM model to use (default: gpt-4o-mini)')
     parser.add_argument('--patterns', nargs='+', metavar='PATTERN',
                        help='File patterns to analyze (e.g., "*.sol" "contracts/*.vy")')
     parser.add_argument('--api-key', help='OpenAI API key (or set OPENAI_API_KEY env var)')
@@ -411,7 +427,7 @@ Examples:
     # Print header
     console.print(Panel.fit(
         "[bold cyan]SCABENCH BASELINE RUNNER[/bold cyan]\n"
-        f"[dim]Model: {config.get('model', 'gpt-5-mini')}[/dim]",
+        f"[dim]Model: {config.get('model', 'gpt-4o-mini')}[/dim]",
         border_style="cyan"
     ))
     

@@ -21,8 +21,8 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 from rich import box
 
-# OpenAI for LLM matching
-from openai import OpenAI
+# LLM for intelligent matching
+import llm
 
 console = Console()
 
@@ -52,19 +52,29 @@ class ScaBenchScorerV2:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the scorer with optional configuration."""
         self.config = config or {}
-        # Use gpt-4o-mini for cost-effectiveness and good performance
-        self.model = self.config.get('model', 'gpt-4o-mini')
+        # Use gpt-4o for best accuracy
+        self.model_id = self.config.get('model', 'gpt-4o')
         self.api_key = self.config.get('api_key') or os.getenv("OPENAI_API_KEY")
         self.confidence_threshold = self.config.get('confidence_threshold', 0.75)
         
         if not self.api_key:
-            raise ValueError("OpenAI API key not provided. Set OPENAI_API_KEY environment variable.")
+            # llm will fall back to other key mechanisms, so this is not a fatal error
+            # We will pass the key to the prompt method if it exists.
+            pass
         
-        self.client = OpenAI(api_key=self.api_key)
+        try:
+            self.model = llm.get_model(self.model_id)
+        except llm.UnknownModelError:
+            console.print(f"[red]Error: Model '{self.model_id}' not found. Is the plugin installed?[/red]")
+            raise
+        except Exception as e:
+            console.print(f"[red]Error initializing LLM model: {e}[/red]")
+            raise
+            
         self.debug = self.config.get('debug', False)
         self.verbose = self.config.get('verbose', False)
     
-    def find_match_in_results(self, expected: Dict, tool_findings: List[Dict]) -> Tuple[bool, Optional[Dict], str]:
+    def find_match_in_results(self, expected: Dict, tool_findings: List[Dict]) -> Tuple[bool, Optional[Dict], str, float]:
         """
         Check if an expected vulnerability exists in the tool findings.
         Returns: (found_match, matched_finding, justification)
@@ -118,18 +128,34 @@ Return confidence between 0.0-1.0 based on match quality:
 When in doubt, lean towards lower confidence."""
 
         try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": "You are a precise vulnerability matcher. Be strict."},
-                    {"role": "user", "content": prompt}
-                ],
-                response_format={"type": "json_object"},
+            response = self.model.prompt(
+                prompt,
+                system="You are a precise vulnerability matcher. Be strict.",
+                key=self.api_key,
+                # Request a JSON response that conforms to a schema
+                schema={
+                    "type": "object",
+                    "properties": {
+                        "found": {"type": "boolean"},
+                        "matching_index": {"type": ["integer", "null"]},
+                        "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                        "reason": {"type": "string"}
+                    },
+                    "required": ["found", "matching_index", "confidence", "reason"]
+                },
                 temperature=0,  # Maximum determinism
                 seed=42  # Fixed seed for consistency
             )
             
-            result = json.loads(response.choices[0].message.content)
+            # Parse response
+            if hasattr(response, 'text'):
+                result_text = response.text()
+            elif hasattr(response, 'content'):
+                result_text = response.content
+            else:
+                result_text = str(response)
+                
+            result = json.loads(result_text)
             
             if self.verbose:
                 console.print(f"[yellow]LLM Response:[/yellow] found={result.get('found')}, "
@@ -148,7 +174,7 @@ When in doubt, lean towards lower confidence."""
         except Exception as e:
             if self.debug:
                 console.print(f"[red]Error matching: {e}[/red]")
-            return False, None, f"Error: {str(e)}"
+            return False, None, f"Error: {str(e)}", 0.0
     
     def score_project(self, 
                      expected_findings: List[Dict],
@@ -394,7 +420,7 @@ def main():
     parser.add_argument('--results-dir', required=True, help='Directory containing tool results')
     parser.add_argument('--output', default='scoring_results', help='Output directory')
     parser.add_argument('--project', help='Score only a specific project')
-    parser.add_argument('--model', default='gpt-4o', help='OpenAI model to use')
+    parser.add_argument('--model', default='gpt-4o', help='LLM model to use')
     parser.add_argument('--debug', action='store_true', help='Enable debug output')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose output')
     parser.add_argument('--confidence-threshold', type=float, default=0.75, help='Confidence threshold for matches (default: 0.75)')

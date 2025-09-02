@@ -96,10 +96,12 @@ class TestBaselineRunner:
     
     def test_initialization(self):
         """Test BaselineRunner initialization."""
-        config = {'model': 'gpt-4o', 'api_key': 'test_key'}
-        runner = BaselineRunner(config)
-        assert runner.model == 'gpt-4o'
-        assert runner.api_key == 'test_key'
+        with patch('llm.get_model') as mock_get_model:
+            mock_get_model.return_value = Mock()
+            config = {'model': 'gpt-4o', 'api_key': 'test_key'}
+            runner = BaselineRunner(config)
+            assert runner.model_id == 'gpt-4o'
+            assert runner.api_key == 'test_key'
     
     def test_finding_creation(self):
         """Test Finding dataclass creation."""
@@ -116,15 +118,15 @@ class TestBaselineRunner:
         assert finding.severity == "high"
         assert finding.id != ""  # Auto-generated
     
-    @patch('baseline_runner.OpenAI')
-    def test_analyze_file_mock(self, mock_openai):
+    @patch('llm.get_model')
+    def test_analyze_file_mock(self, mock_get_model):
         """Test file analysis with mocked LLM."""
         # Setup mock
-        mock_client = Mock()
-        mock_openai.return_value = mock_client
+        mock_model = Mock()
+        mock_get_model.return_value = mock_model
         
         mock_response = Mock()
-        mock_response.choices = [Mock(message=Mock(content=json.dumps([
+        mock_response.text.return_value = json.dumps([
             {
                 "title": "Test vulnerability",
                 "description": "Test description",
@@ -133,10 +135,10 @@ class TestBaselineRunner:
                 "confidence": 0.9,
                 "location": "test()"
             }
-        ])))]
+        ])
         mock_response.usage = Mock(prompt_tokens=100, completion_tokens=50)
         
-        mock_client.chat.completions.create.return_value = mock_response
+        mock_model.prompt.return_value = mock_response
         
         # Run test
         runner = BaselineRunner({'api_key': 'test'})
@@ -156,103 +158,40 @@ class TestScorer:
     
     def test_initialization(self):
         """Test ScaBenchScorer initialization."""
-        config = {'model': 'gpt-4o', 'api_key': 'test_key'}
-        scorer = ScaBenchScorer(config)
-        assert scorer.model == 'gpt-4o'
-        assert scorer.api_key == 'test_key'
-    
-    @patch('scorer.OpenAI')
-    def test_match_finding_perfect_match(self, mock_openai):
-        """Test perfect matching scenario."""
-        # Setup mock for perfect match
-        mock_client = Mock()
-        mock_openai.return_value = mock_client
-        
-        mock_response = Mock()
-        mock_response.choices = [Mock(message=Mock(content=json.dumps({
-            "matched": True,
-            "confidence": 1.0,
-            "justification": "Perfect match: same vulnerability in same location",
-            "dismissal_reasons": []
-        })))]
-        
-        mock_client.chat.completions.create.return_value = mock_response
-        
-        # Run test
-        scorer = ScaBenchScorer({'api_key': 'test'})
-        
-        expected = SAMPLE_BENCHMARK_DATA[0]['vulnerabilities'][0]
-        found = SAMPLE_BASELINE_FINDINGS[0]
-        
-        result = scorer.match_finding_with_llm(expected, found)
-        
-        assert result.matched == True
-        assert result.confidence == 1.0
-        assert "Perfect match" in result.justification
-    
-    @patch('scorer.OpenAI')
-    def test_match_finding_no_match(self, mock_openai):
-        """Test non-matching scenario."""
-        # Setup mock for no match
-        mock_client = Mock()
-        mock_openai.return_value = mock_client
-        
-        mock_response = Mock()
-        mock_response.choices = [Mock(message=Mock(content=json.dumps({
-            "matched": False,
-            "confidence": 0.2,
-            "justification": "Different vulnerability type and location",
-            "dismissal_reasons": ["different_root_cause", "different_location"]
-        })))]
-        
-        mock_client.chat.completions.create.return_value = mock_response
-        
-        # Run test
-        scorer = ScaBenchScorer({'api_key': 'test'})
-        
-        expected = SAMPLE_BENCHMARK_DATA[0]['vulnerabilities'][1]
-        found = SAMPLE_BASELINE_FINDINGS[1]
-        
-        result = scorer.match_finding_with_llm(expected, found)
-        
-        assert result.matched == False
-        assert result.confidence < 1.0
-        assert len(result.dismissal_reasons) > 0
-    
-    @patch.object(ScaBenchScorer, 'match_finding_with_llm')
-    def test_score_project(self, mock_match):
+        with patch('llm.get_model') as mock_get_model:
+            mock_get_model.return_value = Mock()
+            config = {'model': 'gpt-4o', 'api_key': 'test_key'}
+            scorer = ScaBenchScorer(config)
+            assert scorer.model_id == 'gpt-4o'
+            assert scorer.api_key == 'test_key'
+
+    @patch.object(ScaBenchScorer, 'batch_match_findings_with_llm')
+    def test_score_project(self, mock_batch_match):
         """Test complete project scoring."""
-        # Setup mock matches - need 4 calls (2 expected x 2 found)
-        mock_match.side_effect = [
-            # First expected vs first found
-            MatchResult(
-                matched=True,
-                confidence=1.0,
-                justification="Perfect match",
-                expected_title="Reentrancy vulnerability",
-                found_title="Reentrancy vulnerability",
-                dismissal_reasons=[]
-            ),
-            # First expected vs second found (already matched, won't be called)
-            # Second expected vs first found (already used)
-            # Second expected vs second found
-            MatchResult(
-                matched=False,
-                confidence=0.3,
-                justification="Different issue",
-                expected_title="Missing validation",
-                found_title="Integer overflow",
-                dismissal_reasons=["different_root_cause"]
-            ),
-            MatchResult(
-                matched=False,
-                confidence=0.2,
-                justification="Different issue",
-                expected_title="Missing validation",
-                found_title="Integer overflow",
-                dismissal_reasons=["different_root_cause"]
-            ),
-        ]
+        # Setup mock for the batch matching method
+        mock_batch_match.return_value = {
+            "matches": [
+                {
+                    "expected_index": 0,
+                    "expected_title": "Reentrancy vulnerability in withdraw function",
+                    "found_index": 0,
+                    "found_title": "Reentrancy vulnerability in withdraw function",
+                    "confidence": 1.0,
+                    "justification": "Perfect match",
+                    "dismissal_reasons": []
+                },
+                {
+                    "expected_index": 1,
+                    "expected_title": "Missing zero address validation",
+                    "found_index": -1,
+                    "found_title": "None",
+                    "confidence": 0.0,
+                    "justification": "No match found",
+                    "dismissal_reasons": ["not_found"]
+                }
+            ],
+            "unmatched_found": [1]
+        }
         
         scorer = ScaBenchScorer({'api_key': 'test'})
         
@@ -370,17 +309,17 @@ class TestReportGenerator:
 class TestIntegration:
     """Test the complete integration pipeline."""
     
-    @patch('baseline_runner.OpenAI')
-    @patch('scorer.OpenAI')
-    def test_full_pipeline(self, mock_scorer_openai, mock_baseline_openai, tmp_path):
+    @patch('llm.get_model')
+    def test_full_pipeline(self, mock_get_model, tmp_path):
         """Test the complete flow from analysis to report."""
         
-        # Setup mocks for baseline runner
-        mock_baseline_client = Mock()
-        mock_baseline_openai.return_value = mock_baseline_client
+        # Setup mock for the LLM model
+        mock_model = Mock()
+        mock_get_model.return_value = mock_model
         
-        mock_baseline_response = Mock()
-        mock_baseline_response.choices = [Mock(message=Mock(content=json.dumps([
+        # Mock for baseline runner
+        baseline_response = Mock()
+        baseline_response.text.return_value = json.dumps([
             {
                 "title": "Reentrancy vulnerability in withdraw function",
                 "description": "State update after external call",
@@ -389,24 +328,28 @@ class TestIntegration:
                 "confidence": 0.95,
                 "location": "withdraw() function"
             }
-        ])))]
-        mock_baseline_response.usage = Mock(prompt_tokens=100, completion_tokens=50)
+        ])
+        baseline_response.usage = Mock(prompt_tokens=100, completion_tokens=50)
+        mock_model.model_id = "gpt-4o"
         
-        mock_baseline_client.chat.completions.create.return_value = mock_baseline_response
+        # Mock for scorer
+        scorer_response = Mock()
+        scorer_response.text.return_value = json.dumps({
+            "matches": [
+                {
+                    "expected_index": 0,
+                    "expected_title": "Reentrancy vulnerability in withdraw function",
+                    "found_index": 0,
+                    "found_title": "Reentrancy vulnerability in withdraw function",
+                    "confidence": 1.0,
+                    "justification": "Perfect match",
+                    "dismissal_reasons": []
+                }
+            ],
+            "unmatched_found": []
+        })
         
-        # Setup mocks for scorer
-        mock_scorer_client = Mock()
-        mock_scorer_openai.return_value = mock_scorer_client
-        
-        mock_scorer_response = Mock()
-        mock_scorer_response.choices = [Mock(message=Mock(content=json.dumps({
-            "matched": True,
-            "confidence": 1.0,
-            "justification": "Perfect match",
-            "dismissal_reasons": []
-        })))]
-        
-        mock_scorer_client.chat.completions.create.return_value = mock_scorer_response
+        mock_model.prompt.side_effect = [baseline_response, scorer_response]
         
         # Step 1: Run baseline analysis
         source_dir = tmp_path / "source"

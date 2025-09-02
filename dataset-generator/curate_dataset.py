@@ -266,6 +266,9 @@ def meets_criteria(entry: Dict[str, Any], min_vulnerabilities: int = 5, min_high
 def generate_report(project_stats: List[ProjectStats], total_projects: int, output_path: Path, min_vulnerabilities: int = 5, min_high_critical: int = 1):
     """Generate a detailed report of the curation process."""
     
+    # Calculate retention rate safely
+    retention_rate = (len(project_stats) / total_projects * 100) if total_projects > 0 else 0
+    
     report_lines = [
         "# ScaBench Dataset Curation Report",
         f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
@@ -273,7 +276,7 @@ def generate_report(project_stats: List[ProjectStats], total_projects: int, outp
         "## Summary",
         f"- Total projects in original dataset: {total_projects}",
         f"- Projects meeting criteria: {len(project_stats)}",
-        f"- Retention rate: {len(project_stats)/total_projects*100:.1f}%",
+        f"- Retention rate: {retention_rate:.1f}%",
         "",
         "## Criteria Applied",
         "1. At least one existing GitHub repository (not returning 404)",
@@ -343,6 +346,9 @@ def generate_report(project_stats: List[ProjectStats], total_projects: int, outp
     total_critical = sum(s.critical_count for s in project_stats)
     total_high = sum(s.high_count for s in project_stats)
     
+    # Calculate average only if there are projects
+    avg_vulns = total_vulns / len(project_stats) if project_stats else 0
+    
     report_lines.extend([
         "## Aggregate Statistics",
         f"- **Total Lines of Code (all languages)**: {total_lines:,}",
@@ -351,7 +357,7 @@ def generate_report(project_stats: List[ProjectStats], total_projects: int, outp
         f"- **Total Vulnerabilities**: {total_vulns:,}",
         f"- **Total Critical**: {total_critical:,}",
         f"- **Total High**: {total_high:,}",
-        f"- **Average Vulnerabilities per Project**: {total_vulns/len(project_stats):.1f}",
+        f"- **Average Vulnerabilities per Project**: {avg_vulns:.1f}",
         ""
     ])
     

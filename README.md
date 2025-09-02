@@ -557,23 +557,6 @@ The scorer enforces EXTREMELY STRICT matching criteria:
 }
 ```
 
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass
-5. Submit a pull request
-
-See individual component READMEs for detailed development guidelines.
-
 ## License
 
 MIT License - see LICENSE file for details
-
-## Support
-
-- 📊 [Dataset Documentation](./datasets/README.md) - Dataset format and creation
-- 🧪 [Testing Guide](./tests/) - Running and writing tests
-- 🐛 [Report Issues](https://github.com/scabench/scabench/issues)
-- 💬 [Discussions](https://github.com/scabench/scabench/discussions)

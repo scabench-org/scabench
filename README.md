@@ -54,7 +54,6 @@ Pre-computed baseline results from analyzing each individual file with GPT-5:
 Pre-curated benchmark datasets with real vulnerabilities from audits.
 - **Current**: `curated-2025-08-18.json` (31 projects, 555 vulnerabilities)
 - Format: JSON with project metadata, repo URLs, commits, and vulnerability details
-- [View dataset documentation](./datasets/)
 
 ### 🔧 **Dataset Generator** (`dataset-generator/`)
 Create NEW datasets by scraping and curating audit data.

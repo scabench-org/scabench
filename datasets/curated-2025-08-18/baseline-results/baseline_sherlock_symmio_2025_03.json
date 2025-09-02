@@ -1,0 +1,182 @@
+{
+  "project": "sherlock_symmio_2025_03",
+  "timestamp": "2025-09-02T14:38:57.932700",
+  "files_analyzed": 7,
+  "files_skipped": 0,
+  "total_findings": 14,
+  "findings": [
+    {
+      "title": "Missing validation of vesting timeline allows immediate full unlock",
+      "description": "The library does not validate that endTime is strictly greater than startTime during setup. In setup(), the times are accepted as-is without checks. In unlockedAmount(), when endTime < startTime, the first condition (currentTime >= self.endTime) is true for most timestamps, causing the function to return the full self.amount immediately, even if the vesting was supposed to start in the future. This then makes claimable() return the entire amount (minus claimedAmount), enabling immediate full claims and bypassing vesting. Additionally, remainingDuration() will revert with an arithmetic underflow when called while block.timestamp <= self.startTime and endTime < startTime (self.endTime - self.startTime underflows in Solidity 0.8), causing resetAmount() to revert and preventing remediation via reset. After block.timestamp > self.startTime, remainingDuration() becomes 0, and resetAmount() reverts with PlanIsFinished(), effectively making the misconfigured plan unresettable. Impact: funds allocated under a misconfigured plan can be claimed immediately (loss of funds), and administrators may be unable to correct the plan via resetAmount().",
+      "vulnerability_type": "improper input validation / logic flaw",
+      "severity": "critical",
+      "confidence": 0.95,
+      "location": "setup(), unlockedAmount(), remainingDuration(), resetAmount() functions",
+      "file": "LibVestingPlan.sol",
+      "id": "daf31af48ddf21d7",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Permanent reward loss for non-18-decimal reward tokens due to dropped remainder on claim",
+      "description": "When claiming rewards for tokens with decimals < 18, the contract scales up internal accounting by a scaling factor. In _claimRewardsFor(), the code divides the accumulated (scaled) rewards by the scaling factor to get the transferable amount, then sets rewards[user][token] = 0 before transferring. This drops any remainder (rewards[user][token] % scalingFactor), causing permanent loss of owed rewards to users for each claim. Over many claims and users, this can accumulate meaningfully.\nWhere: _claimRewardsFor() function (reward handling loop)\nWhy: Integer division truncates; the remainder is not preserved in storage and is effectively burned from the user's balance.\nImpact: Silent loss of user rewards (value leakage) whenever reward token has fewer than 18 decimals; remainder cannot be reclaimed later.",
+      "vulnerability_type": "arithmetic/precision loss",
+      "severity": "medium",
+      "confidence": 0.95,
+      "location": "_claimRewardsFor(address user)",
+      "file": "SymmStaking.sol",
+      "id": "514bb7a741c7554c",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Reward tokens with decimals > 18 can overflow reward accounting and cause DoS",
+      "description": "The scaling logic only applies when tokenDecimals < 18. For tokens with decimals >= 18, getScalingFactor() returns 1, and rewardPerToken() multiplies (delta * rate * 1e18) without downscaling. For reward tokens with decimals > 18, rate is denominated in a much larger unit, and the multiplication by 1e18 can overflow, reverting rewardPerToken() and any function that calls it (deposit, withdraw, claim, notify). addRewardToken() does not restrict decimals > 18, so an authorized manager can add such a token and unintentionally brick the contract.\nWhere: getScalingFactor(), rewardPerToken(), addRewardToken(), any path that calls _updateRewardsStates() (deposit, withdraw, claimRewards, notifyRewardAmount)\nWhy: Missing downscaling for tokens with decimals > 18 leads to excessive magnitudes and overflow in arithmetic under Solidity 0.8 checked math.\nImpact: Denial of service for user operations (deposit/withdraw/claim) and reward configuration when a >18-decimal reward token is added and rewards accrue.",
+      "vulnerability_type": "integer overflow / denial of service",
+      "severity": "high",
+      "confidence": 0.9,
+      "location": "rewardPerToken(address), getScalingFactor(address), addRewardToken(address)",
+      "file": "SymmStaking.sol",
+      "id": "7b148d46a5dab7c0",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Accounting mismatch with deflationary/fee-on-transfer staking token can lead to insolvency and user loss",
+      "description": "The contract credits staking shares based on the requested amount, not on the actual tokens received/sent. For fee-on-transfer or deflationary staking tokens, safeTransferFrom() in deposit() may transfer fewer tokens than 'amount', yet totalSupply and balanceOf are increased by 'amount'. Similarly, withdraw() transfers 'amount' out before updating state, assuming exact transfer. This mismatch can lead to situations where users are over-credited relative to actual tokens held by the contract, causing insolvency and potential losses to other users or failed withdrawals later.\nWhere: deposit() and withdraw() functions\nWhy: No balance-delta checks around transfers; assumes standard ERC20 semantics without fees/rebasing.\nImpact: Loss of funds or stuck funds if stakingToken is non-standard (fee-on-transfer, rebasing), enabling users to withdraw more than the contract actually holds or causing future withdrawals to revert.",
+      "vulnerability_type": "token compatibility / accounting error",
+      "severity": "high",
+      "confidence": 0.9,
+      "location": "deposit(uint256,address), withdraw(uint256,address)",
+      "file": "SymmStaking.sol",
+      "id": "3d797ecf54e1bb39",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Unbounded iteration over rewardTokens can cause gas-based DoS",
+      "description": "Several core functions iterate over the entire rewardTokens array: _updateRewardsStates() (called by deposit, withdraw, claimRewards, notifyRewardAmount) and _claimRewardsFor(). If many reward tokens are added, these loops can exceed gas limits, preventing users from depositing, withdrawing, or claiming rewards. Only REWARD_MANAGER_ROLE can add reward tokens, but misconfiguration or excessive additions can inadvertently DoS end users.\nWhere: _updateRewardsStates(), _claimRewardsFor(), and all external functions that invoke them (deposit, withdraw, claimRewards, notifyRewardAmount)\nWhy: Unbounded loop over a dynamic array in critical user flows; gas grows linearly with rewardTokens length.\nImpact: Denial of service for users due to transactions running out of gas as the number of reward tokens grows.",
+      "vulnerability_type": "denial of service (gas exhaustion)",
+      "severity": "medium",
+      "confidence": 0.9,
+      "location": "_updateRewardsStates(address), _claimRewardsFor(address), deposit(), withdraw(), claimRewards(), notifyRewardAmount()",
+      "file": "SymmStaking.sol",
+      "id": "d2669587612327ed",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Admin-rescuable tokens allow draining of staked and reward funds",
+      "description": "The rescueTokens() function lets the DEFAULT_ADMIN_ROLE transfer any ERC20 from the contract to an arbitrary receiver, without restrictions. This includes the staking token and reward tokens (even if they represent user funds or accrued rewards). An admin or compromised admin key can drain user funds, especially in combination with pause().\nWhere: rescueTokens(address,uint256,address)\nWhy: No safeguards or restrictions on which tokens can be rescued or how much; no timelock; no veto.\nImpact: Loss of funds for stakers/reward recipients if admin is malicious or compromised.",
+      "vulnerability_type": "privileged functionality / access control risk",
+      "severity": "medium",
+      "confidence": 0.99,
+      "location": "rescueTokens(address,uint256,address)",
+      "file": "SymmStaking.sol",
+      "id": "ccf0429d46358879",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Fee-on-transfer or reverting reward tokens can underpay or DoS claims",
+      "description": "When claiming rewards, the contract zeroes out the user's reward before calling safeTransfer(). If the reward token charges a transfer fee, the user receives less than their recorded entitlement and the difference is lost permanently. If a reward token reverts on transfer to the user (malicious or incompatible token), the entire claim transaction reverts, blocking users from claiming any rewards as long as the problematic token remains in rewardTokens.\nWhere: _claimRewardsFor() and reward token transfers\nWhy: Assumes standard ERC20 tokens without transfer fees or custom transfer logic; no compatibility checks or fallback mechanisms.\nImpact: Loss of funds (underpayment) for fee-on-transfer reward tokens; denial of service for claiming if a malicious/incompatible reward token is added.",
+      "vulnerability_type": "token compatibility / denial of service",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": "_claimRewardsFor(address)",
+      "file": "SymmStaking.sol",
+      "id": "f2ac6cdcdb6ffbd1",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Assumes POOL token ordering/identity without validation",
+      "description": "The contract assumes that the pool's token arrays and balances are ordered as [SYMM, USDC] but never validates this. Specifically: getLiquidityQuote() treats balances[0] as SYMM and balances[1] as USDC, and _addLiquidity() treats POOL.getTokens()[0] as SYMM and [1] as USDC. If the POOL has tokens in a different order or different assets than the SYMM/USDC provided at initialization, the contract will attempt to transfer/approve the wrong tokens. This can lead to: (1) pulling the wrong token from the user (safeTransferFrom on poolTokens[1] instead of USDC), (2) approving PERMIT2 for the wrong token, and (3) incorrect quotes, causing reverts and potentially trapping user funds if misconfiguration is present. Where: getLiquidityQuote() and _addLiquidity() (use of balances[0]/[1] and poolTokens[0]/[1]). Why it's a security issue: A misconfigured or malicious pool address can cause unexpected transfers/approvals and failed liquidity operations; in worst cases, the contract may grant allowances on unintended tokens or pull unintended tokens from users. Impact: Loss of funds via incorrect token movements or funds stuck due to consistent reverts when token identities/order do not match expectations.",
+      "vulnerability_type": "logic error / misconfiguration",
+      "severity": "medium",
+      "confidence": 0.78,
+      "location": "getLiquidityQuote() and _addLiquidity(): reliance on balances[0]/[1] and getTokens()[0]/[1] matching SYMM/USDC without checks",
+      "file": "SymmVesting.sol",
+      "id": "4225d45ce3eb6db4",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Residual ERC20 allowances to Permit2 can be abused if Permit2 is malicious/compromised",
+      "description": "The contract grants ERC20 allowances to the PERMIT2 contract for both SYMM and USDC each call and does not reliably reset them to zero afterward. Code: in _addLiquidity(), it does usdc.approve(address(PERMIT2), usdcIn) and symm.approve(address(PERMIT2), symmIn), then PERMIT2.approve(...) with expiry at the current timestamp. If the router does not consume the entire allowance (e.g., amountsIn[1] < usdcIn), leftover ERC20 allowances from this contract to PERMIT2 remain. If PERMIT2 is malicious or becomes compromised, it can call transferFrom directly (using the ERC20 allowance, independent of its internal permit mechanism) to siphon tokens from this contract. Why it's a security issue: Persisting nonzero allowances to an arbitrary external contract allows that contract to pull tokens at any time within the allowance. Impact: Potential loss of tokens held by this contract (SYMM, USDC, or even other tokens if misordered poolTokens were approved) if PERMIT2 is not trustworthy.",
+      "vulnerability_type": "approval/allowance mismanagement",
+      "severity": "medium",
+      "confidence": 0.72,
+      "location": "_addLiquidity(): usdc.approve(address(PERMIT2), usdcIn); symm.approve(address(PERMIT2), symmIn); no allowance reset after use",
+      "file": "SymmVesting.sol",
+      "id": "911d0c72021ac1c5",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Potential DoS with tokens requiring zero-allowance reset on approve",
+      "description": "The contract uses IERC20.approve directly to set allowances for PERMIT2 (usdc.approve and symm.approve) without first resetting to zero. Some ERC20 tokens (e.g., USDT-like) require an allowance to be set to zero before changing it to a new non-zero value. If SYMM or USDC (or poolTokens used) exhibit this behavior, calls to addLiquidity would start reverting after the first use, causing a permanent denial of service for liquidity additions until manual remediation. While USDC is generally standard-compliant, the code does not enforce or adapt to this behavior, and SYMM is an arbitrary token.",
+      "vulnerability_type": "denial of service (ERC20 compatibility)",
+      "severity": "low",
+      "confidence": 0.6,
+      "location": "_addLiquidity(): direct calls to approve() without zero-first pattern",
+      "file": "SymmVesting.sol",
+      "id": "227921b21f7fc1f1",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Unsafe ERC20 transfers: return values ignored and SafeERC20 not used",
+      "description": "The contract performs ERC20 transfers using IERC20(token).transfer(...) and ignores the boolean return value, despite importing SafeERC20. Many ERC20 tokens are non-standard: some return false on failure (instead of reverting) or return no value at all. Ignoring the return value can record a claim as successful (state updated and events emitted) even if the transfer failed, leaving users unpaid and desynchronizing accounting. Additionally, tokens that do not return a boolean may cause unexpected behavior or reverts. This occurs in _claimUnlockedToken (transferring to user) and _claimLockedToken (transferring to user and penalty receiver). Impact: users may lose their claimable tokens (state shows claimed but no tokens received), funds can become stuck, and claims can fail on non-compliant tokens, causing DoS.",
+      "vulnerability_type": "erc20-compatibility / improper return-value handling",
+      "severity": "high",
+      "confidence": 0.9,
+      "location": "_claimUnlockedToken() and _claimLockedToken() use IERC20(token).transfer(...) without SafeERC20 or return-value checks",
+      "file": "Vesting.sol",
+      "id": "3e28a7eba4a4b140",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Operator can force early locked claims and siphon penalties from users without consent",
+      "description": "Functions claimLockedTokenFor and claimLockedTokenForByPercentage allow any account with OPERATOR_ROLE to trigger a locked claim on behalf of a user. When a locked claim is triggered, the contract applies a penalty and transfers it to lockedClaimPenaltyReceiver. There is no user authorization or safeguard. A malicious or compromised operator can force early claims for any user, causing part of the user\u2019s locked balance to be permanently lost as penalty (sent to the penalty receiver). If the penalty is high, this can drain a substantial portion of users\u2019 locked funds. This is a privilege-abuse risk leading to user fund loss. Affected locations: claimLockedTokenFor(), claimLockedTokenForByPercentage() externally, executing logic in _claimLockedToken().",
+      "vulnerability_type": "access control / privilege abuse",
+      "severity": "high",
+      "confidence": 0.95,
+      "location": "claimLockedTokenFor(), claimLockedTokenForByPercentage(), and internal _claimLockedToken()",
+      "file": "Vesting.sol",
+      "id": "1773e1ab32b39b02",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Unlimited minting via privileged role can inflate supply",
+      "description": "The contract allows accounts with MINTER_ROLE to mint arbitrary amounts of tokens without any cap. By default in OpenZeppelin AccessControl, DEFAULT_ADMIN_ROLE is the admin of all roles, so the admin can grant itself or others MINTER_ROLE. If the admin key/timelock is compromised or abused, an attacker can mint unlimited tokens and dump them, leading to severe dilution and potential draining of liquidity pools.\n- What: Centralized privileged minting with no total supply cap.\n- Where: mint(address to, uint256 amount) at lines 22-24; role setup at lines 7 and 15 where DEFAULT_ADMIN_ROLE is granted and implicitly administers MINTER_ROLE.\n- Why it's a security issue: A single compromised or malicious privileged entity can arbitrarily increase supply, undermining token value and enabling fund extraction from markets.\n- Potential impact: Loss of funds via market dump, value dilution, destruction of holder value, and protocol reputation damage.",
+      "vulnerability_type": "centralization/privileged roles (unbounded mint)",
+      "severity": "high",
+      "confidence": 0.95,
+      "location": "mint() function, lines 22-24; role configuration in constructor, lines 14-15",
+      "file": "symm.sol",
+      "id": "9a95eaf6ec0b78d9",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Global supply cap bypass via repeated allocation cycles",
+      "description": "The contract enforces MAX_ISSUABLE_TOKEN only against the current sum of user allocations when calling setBatchAllocations(), but it does not enforce any cumulative mint cap over the lifetime of the contract. After users claim (claim()), their individual allocations are set to 0, and the setter can assign new allocations again up to MAX_ISSUABLE_TOKEN. This allows minting another full tranche in subsequent cycles. Because totalMintAmount is never compared against MAX_ISSUABLE_TOKEN, the total tokens minted over time can exceed the intended cap. Where it occurs: - Enforcement only in setBatchAllocations() (post-loop check against MAX_ISSUABLE_TOKEN). - Missing cumulative cap checks in claim() and adminClaim() to ensure totalMintAmount + toMint <= MAX_ISSUABLE_TOKEN. Why it's a security issue: The presence of MAX_ISSUABLE_TOKEN strongly implies an upper bound on total mintable supply. However, a privileged SETTER_ROLE can repeatedly reallocate after claims and mint beyond this cap, inflating supply and undermining protocol guarantees. Potential impact: Unlimited inflation over time, breaking the intended supply cap, devaluing the token, and enabling theft/protocol manipulation (a compromised or malicious SETTER_ROLE can allocate to themselves and repeatedly claim).",
+      "vulnerability_type": "business logic / supply cap bypass",
+      "severity": "high",
+      "confidence": 0.9,
+      "location": "setBatchAllocations(), claim(), adminClaim() (no cumulative cap enforcement)",
+      "file": "SymmAllocationClaimer.sol",
+      "id": "39dd19f0b89ceff6",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 15604,
+    "output_tokens": 44293,
+    "total_tokens": 59897
+  }
+}

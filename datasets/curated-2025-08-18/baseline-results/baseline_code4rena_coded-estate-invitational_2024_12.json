@@ -1,0 +1,146 @@
+{
+  "project": "code4rena_coded-estate-invitational_2024_12",
+  "timestamp": "2025-09-01T23:36:07.016665",
+  "files_analyzed": 12,
+  "files_skipped": 0,
+  "total_findings": 11,
+  "findings": [
+    {
+      "title": "Unbounded pagination enables expensive full-store scans in queries",
+      "description": "The constants DEFAULT_LIMIT and MAX_LIMIT are set to u32::MAX (4294967295) and are used as defaults for pagination in multiple query endpoints. When the caller omits the limit, these queries attempt to iterate and collect up to the entire dataset. This occurs in:\n- operators(): computes limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) and iterates self.operators.prefix(...).range(...).take(limit)\n- tokens(): computes limit similarly and iterates self.tokens.idx.owner.keys(...).take(limit)\n- all_tokens(): computes limit similarly and iterates self.tokens.range(...).take(limit)\n- approvals()/owner_of(): not paginated; they return all approvals, which can also grow unbounded\n\nWhy this is a security issue: CosmWasm queries execute in the WASM VM with a query gas/CPU limit. Unbounded iteration and collection can exhaust gas/CPU or memory, causing the query to fail and potentially saturating node resources if abused. Attackers can spam these queries with large or default limits to cause denial of service of the contract's query endpoints. Additionally, if other contracts issue smart queries to these endpoints during transaction execution, those transactions can be made to consistently fail (griefing), impacting protocol integrations.\n\nPotential impact:\n- Denial of service for RPC/query endpoints of this contract (queries time out or run out of gas)\n- Griefing of other contracts that smart-query these endpoints (their transactions may run out of gas)\n- Excessive node resource consumption (CPU/memory) when datasets are large\n\nWhere it occurs:\n- DEFAULT_LIMIT/MAX_LIMIT constants at top of file\n- operators(...) function\n- tokens(...) function\n- all_tokens(...) function\n- approvals(...) and owner_of(...) return all approvals without pagination\n",
+      "vulnerability_type": "denial of service",
+      "severity": "medium",
+      "confidence": 0.9,
+      "location": "DEFAULT_LIMIT/MAX_LIMIT constants; operators(), tokens(), all_tokens(), approvals(), owner_of()",
+      "file": "query.rs",
+      "id": "4ee83b5f1773d999",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Unbounded metadata allows state bloat and query denial-of-service",
+      "description": "The Metadata and Trait structs in lib.rs use unbounded Strings and vectors (e.g., attributes: Option<Vec<Trait>> and image: Option<Vec<Trait>>). The entry points simply delegate to Cw721Contract::execute without enforcing any size limits on the extension payload. In cw721-base, the extension is stored as-is and returned by queries like NftInfo and AllNftInfo. A minter (or anyone who can trigger mint-like messages, depending on your ExecuteMsg) can include extremely large metadata, leading to excessive gas/CPU during serialization and query handling, potentially causing queries for affected tokens to fail or time out. This can also bloat on-chain state. Location: lib.rs, struct definitions Trait and Metadata; used via entry::execute -> Cw721Contract::execute handling ExecuteMsg<Mint> with Extension = Option<Metadata>.",
+      "vulnerability_type": "denial_of_service",
+      "severity": "medium",
+      "confidence": 0.7,
+      "location": "lib.rs, Metadata and Trait definitions; impact surfaces in execute() -> cw721 mint and NftInfo/AllNftInfo queries",
+      "file": "lib.rs",
+      "id": "62bf16fea8e079d3",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Anyone can mint NFTs (missing access control in mint)",
+      "description": "The mint function has the owner check commented out, allowing any sender to mint arbitrary tokens. Specifically, the cw_ownable::assert_owner(deps.storage, &info.sender)? line is commented in mint(), removing the restriction that only the contract owner/minter can mint. This enables unauthorized NFT creation, inflating supply and undermining all downstream logic tied to ownership, rentals, and sales.",
+      "vulnerability_type": "access control",
+      "severity": "critical",
+      "confidence": 0.99,
+      "location": "mint() function",
+      "file": "execute.rs",
+      "id": "54af1caeb16b393e",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Approved spender can withdraw tenant funds via withdrawtolandlord",
+      "description": "withdrawtolandlord() authorizes using check_can_send(), which permits not only the owner and operators but also any non-expired token approval (spender) to call it. A malicious actor can obtain approval by placing a bid when auto_approve is true (setbidtobuy) and then call withdrawtolandlord to siphon a tenant\u2019s deposit to an arbitrary address, restricted only by minimal checks. This is a privilege escalation allowing theft of tenant funds.",
+      "vulnerability_type": "access control / privilege escalation",
+      "severity": "critical",
+      "confidence": 0.95,
+      "location": "withdrawtolandlord() function",
+      "file": "execute.rs",
+      "id": "252c08a203f1107f",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Double-charged fees in short-term rental finalization",
+      "description": "In setreservationforshortterm(), the contract immediately credits the protocol fee (sent_amount - rent_amount) to the internal fee balance. Later, in finalizeshorttermrental(), when an approved reservation is finalized, the code again credits the fee (amount * fee_percentage / 10000) to the fee balance and deducts it from landlord payout. This charges the fee twice, underpaying the landlord and inflating the fee ledger, leading to loss of funds for the property owner and potential accounting inconsistencies.",
+      "vulnerability_type": "business logic / financial",
+      "severity": "high",
+      "confidence": 0.9,
+      "location": "setreservationforshortterm() and finalizeshorttermrental() functions",
+      "file": "execute.rs",
+      "id": "603a40516d6d6c72",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Mutable sell denom can lock or misdirect bid refunds and sale payouts",
+      "description": "The refund and payout logic for sales uses token.sell.denom at the time of refund/payout, not the denom at the time the bid was deposited. setbidtobuy() records only the amount, not the denom. An owner can change the sell denom via setlistforsell() while bids exist. Then, when a bidder cancels or when transfer_nft() pays the seller, BankMsg::Send uses the new denom, potentially causing failures (no balance in that denom) and permanently locking bidder funds or blocking payouts.",
+      "vulnerability_type": "business logic",
+      "severity": "high",
+      "confidence": 0.85,
+      "location": "setlistforsell(), setbidtobuy(), transfer_nft()",
+      "file": "execute.rs",
+      "id": "c60e3fbe4b1f5a1c",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "u64 arithmetic overflow in short-term rent calculation allows underpayment and long reservation DoS",
+      "description": "In setreservationforshortterm(), rent_amount is computed as price_per_day * (new_checkout_timestamp - new_checkin_timestamp) / 86400 using u64 arithmetic. For large periods, multiplying price_per_day by the day count can overflow u64 in release builds (wrapping), resulting in a much smaller rent_amount. Attackers can reserve very long periods while paying minimal fees, blocking availability and causing revenue loss (DoS against the landlord).",
+      "vulnerability_type": "integer overflow",
+      "severity": "high",
+      "confidence": 0.8,
+      "location": "setreservationforshortterm() function",
+      "file": "execute.rs",
+      "id": "d482bb2fb81835a6",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Unchecked indexing of funds and renting_period vectors can cause panics",
+      "description": "Multiple functions index vectors without validating length, e.g., info.funds[0] and renting_period[0]/[1]. Calling these with empty funds or malformed renting_period vectors will panic the contract (out-of-bounds), reverting the tx. While state is reverted, this creates unnecessary fragility and can be used to spam failing txs. Affected functions include setbidtobuy(), setreservationforshortterm(), depositforlongtermrental(), and many rental approval/cancel/finalize functions.",
+      "vulnerability_type": "denial of service",
+      "severity": "low",
+      "confidence": 0.85,
+      "location": "setbidtobuy(), setreservationforshortterm(), depositforlongtermrental(), setapproveforshortterm(), rejectreservationforshortterm(), cancelreservationafterapprovalforshortterm(), cancelreservationbeforeapprovalforshortterm(), finalizeshorttermrental(), setreservationforlongterm(), cancelreservationbeforeapprovalforlongterm(), rejectreservationforlongterm(), setapproveforlongterm(), cancelreservationafterapprovalforlongterm(), finalizelongtermrental(), withdrawtolandlord()",
+      "file": "execute.rs",
+      "id": "29fea2b69e199a1d",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Unchecked fee arithmetic and no cap on fee may overflow/wrap leading to incorrect fee accounting",
+      "description": "Fee calculations frequently cast amounts to u128 and multiply by fee_percentage without checked math: (u128::from(amount) * u128::from(fee_percentage)) / 10000. If fee is set to a very large value (set_fee_value has no bounds) or amounts are very large, this multiplication can overflow u128 in release builds, wrapping and producing incorrect fees (undercharging/overcharging). This can lead to mis-accounting and unexpected fund distribution.",
+      "vulnerability_type": "integer overflow / financial",
+      "severity": "medium",
+      "confidence": 0.75,
+      "location": "transfer_nft(), setreservationforshortterm(), finalizeshorttermrental(), finalizelongtermrental(), withdrawtolandlord(), withdraw()",
+      "file": "execute.rs",
+      "id": "e9c4ed5b0c07d949",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Unchecked u64 arithmetic can wrap in token counter",
+      "description": "The functions increment_tokens and decrement_tokens update the token_count using primitive u64 arithmetic (val = self.token_count(storage)? + 1 and val = self.token_count(storage)? - 1) without bounds checking. In Rust release builds, u64 arithmetic wraps on overflow/underflow. If decrement_tokens is called when the count is 0, it will underflow to u64::MAX; similarly, if increment_tokens somehow reaches u64::MAX, it will wrap to 0. This results in state corruption of the token counter, which can break supply/accounting invariants, enable minting beyond intended limits, or cause logic that relies on a sane token count to malfunction, potentially leading to denial-of-service or protocol misbehavior.",
+      "vulnerability_type": "integer overflow/underflow",
+      "severity": "medium",
+      "confidence": 0.8,
+      "location": "increment_tokens() and decrement_tokens() functions",
+      "file": "state.rs",
+      "id": "4dd494cff75c0385",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Balance arithmetic uses unchecked add/sub on Uint128, causing panics on underflow/overflow",
+      "description": "The functions increase_balance and decrease_balance modify stored balances using += and -= on Uint128 without prior bounds checks. If decrease_balance is called with amount > current balance (e.g., due to user input or a logic bug), this will trigger an underflow and panic. Similarly, extremely large additions can overflow. In CosmWasm, such panics abort execution (revert), which can be triggered by an attacker to fail calls that reach these code paths, leading to denial-of-service for those transactions and poorer error handling. While state remains unchanged on revert, this is still a robustness and DoS risk. Prefer using checked_add/checked_sub and returning explicit errors.",
+      "vulnerability_type": "denial of service",
+      "severity": "low",
+      "confidence": 0.6,
+      "location": "increase_balance() and decrease_balance() functions",
+      "file": "state.rs",
+      "id": "6b89e168aab23634",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 32871,
+    "output_tokens": 29842,
+    "total_tokens": 62713
+  }
+}

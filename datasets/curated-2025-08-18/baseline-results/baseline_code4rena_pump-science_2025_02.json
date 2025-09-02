@@ -1,0 +1,170 @@
+{
+  "project": "code4rena_pump-science_2025_02",
+  "timestamp": "2025-09-02T05:25:49.674263",
+  "files_analyzed": 25,
+  "files_skipped": 0,
+  "total_findings": 13,
+  "findings": [
+    {
+      "title": "Missing access control enables arbitrary freezing/thawing of token accounts",
+      "description": "The methods lock_ata() and unlock_ata() perform SPL Token freeze_account and thaw_account CPIs using the program\u2019s PDA authority (bonding_curve) without enforcing any caller authorization or constraining which token account can be targeted. If the instruction that constructs BondingCurveLockerCtx exposes bonding_curve_token_account as an arbitrary account, a malicious caller can pass any user's token account for the same mint and cause the program to freeze it (DoS) or thaw it, since the PDA is the mint\u2019s freeze authority. This occurs in locker.rs: lock_ata() and unlock_ata(). Impact: attacker can freeze victim token accounts for the mint (preventing transfers) or prematurely thaw accounts the protocol intended to keep locked, disrupting protocol mechanics.",
+      "vulnerability_type": "access control",
+      "severity": "high",
+      "confidence": 0.65,
+      "location": "locker.rs: lock_ata(), unlock_ata()",
+      "file": "locker.rs",
+      "id": "737594e16354fa0d",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Unauthorized irreversible revocation of mint and freeze authorities",
+      "description": "The methods revoke_mint_authority() and revoke_freeze_authority() call token::set_authority with new authority = None, permanently revoking the mint\u2019s MintTokens and FreezeAccount authorities using the program PDA as signer. There are no checks here to ensure only an authorized admin or expected program state transition can invoke these operations. If exposed without strict access control in the calling instruction, any user could trigger these functions, irreversibly bricking minting (protocol cannot mint for bonding curve operations) or removing freeze control (or, if accounts are currently frozen, leaving them permanently frozen). This occurs in locker.rs: revoke_mint_authority() and revoke_freeze_authority(). Impact: protocol corruption/DoS, permanent loss of control over the token mint and freeze state, potentially trapping user funds in frozen accounts or halting protocol mint/redemption flows.",
+      "vulnerability_type": "access control",
+      "severity": "critical",
+      "confidence": 0.65,
+      "location": "locker.rs: revoke_mint_authority(), revoke_freeze_authority()",
+      "file": "locker.rs",
+      "id": "d038205a00af1279",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Unchecked unwrap causes panic on division-by-zero, enabling DoS",
+      "description": "The function bps_mul calls bps_mul_raw(...).unwrap(), which will panic if bps_mul_raw returns None. In bps_mul_raw, the computation uses checked_div(divisor as u128), which returns None when divisor == 0. Therefore, passing a zero divisor into bps_mul leads to a panic. Location: bps_mul() function, unwrap on approximately line 4; root cause in bps_mul_raw() checked_div on approximately lines 7-9. In smart contract contexts, panics abort the transaction. If an attacker can influence the divisor (e.g., via user input or unvalidated parameters), they can reliably trigger a panic, causing denial of service for that code path (e.g., revert entire batch operations, block progress of a transaction, or grief other users by making calls fail).",
+      "vulnerability_type": "denial of service (panic / unchecked unwrap)",
+      "severity": "medium",
+      "confidence": 0.95,
+      "location": "bps_mul() function, unwrap of Option (line ~4); bps_mul_raw() checked_div with divisor (lines ~7-9)",
+      "file": "util.rs",
+      "id": "059db254c7fb083c",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Unverified associated_token_program allows arbitrary CPI to attacker-controlled program using payer\u2019s signature",
+      "description": "In lock_pool(), the program performs a CPI to the SPL Associated Token Program via associated_token::create_idempotent without verifying that the provided associated_token_program account is the canonical SPL Associated Token Program ID. Because payer is a Signer and is forwarded as the 'payer' account to this CPI, a malicious associated token program supplied by an attacker could execute arbitrary inner instructions using the payer\u2019s signature. For example, it could invoke the System Program to transfer lamports from the payer to another account included in the CPI accounts (e.g., the provided escrow_vault or lock_escrow), draining funds. This occurs in lock_pool() at the associated_token::create_idempotent call where ctx.accounts.associated_token_program is used unchecked. This is a security issue because it enables a confused-deputy attack: the contract grants an untrusted program the ability to act with the payer\u2019s signature over the provided accounts, leading to potential theft of lamports or other malicious side effects. Impact: loss of payer funds and unexpected account creations or mutations.",
+      "vulnerability_type": "untrusted external call / program ID spoofing (CPI)",
+      "severity": "critical",
+      "confidence": 0.85,
+      "location": "lock_pool() function, associated_token::create_idempotent CPI using ctx.accounts.associated_token_program (unchecked program ID)",
+      "file": "lock_pool.rs",
+      "id": "818ad0aff8779af7",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Arithmetic underflow in fee phase calculation allows fee bypass",
+      "description": "In calculate_fee, the line 'let slots_passed = current_slot - start_slot;' performs unchecked subtraction on u64. If current_slot < start_slot (e.g., fee computation is invoked before the curve starts), this underflows and wraps to a very large number. The subsequent branching then falls into the '> 250' case, charging only 1% fee instead of the intended 99% early-phase fee. This can be exploited to significantly underpay fees prior to the start slot or whenever an earlier slot value is used. Impact: protocol manipulation and potential loss of protocol fees. Location: calculate_fee() function, around the computation of 'slots_passed'.",
+      "vulnerability_type": "integer underflow/logic error",
+      "severity": "medium",
+      "confidence": 0.75,
+      "location": "calculate_fee() function, 'let slots_passed = current_slot - start_slot'",
+      "file": "curve.rs",
+      "id": "75b7578cbcacca70",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Invariant check allows attacker-supplied fake token account (insufficient account validation)",
+      "description": "The invariant function only checks that the provided token account's owner equals the BondingCurve account ('tkn_account.owner != bonding_curve.key()') and then uses its balance for critical consistency checks. SPL Token accounts' 'owner' field can be set arbitrarily at creation; an attacker can create a token account with owner set to the bonding curve PDA and pass it to invariant. Because the invariant does not validate that the token account's mint matches bonding_curve.mint nor that the account is the expected PDA-derived token account, the attacker can spoof balances to satisfy the invariant. If other instructions rely on this invariant to authorize operations (e.g., SOL withdrawals from escrow or state transitions), this can enable unauthorized actions or mis-accounting, potentially leading to loss of funds or protocol manipulation. Location: invariant() function.",
+      "vulnerability_type": "improper account validation",
+      "severity": "high",
+      "confidence": 0.7,
+      "location": "invariant() function",
+      "file": "curve.rs",
+      "id": "7477dcc2e1fb4443",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Unchecked subtraction can underflow and wrap in buy and sell paths",
+      "description": "The program performs plain u64 subtraction when computing net input/output after fees without guarding against underflow. Specifically: (1) In the buy branch of handler(), it computes `buy_amount_applied = exact_in_amount - fee_lamports`. If `fee_lamports > exact_in_amount`, this underflows and wraps to a very large u64 in release builds, producing an unintended, massive input to `apply_buy`. (2) In complete_sell(), it computes `sell_amount_minus_fee = sell_result.sol_amount - fee_lamports`. If `fee_lamports > sell_result.sol_amount`, this underflows and wraps to a very large u64. Why it's a security issue: Wrapped values can cause incorrect amount calculations. In the buy path, this can violate exact-in semantics and charge the user more lamports than `exact_in_amount` (because the program later pulls `buy_result.sol_amount` lamports from the user plus `fee_lamports`, without ensuring `fee_lamports <= exact_in_amount`). In both buy and sell paths, wrapped values can also cause subsequent SOL transfers to attempt moving an impossibly large amount, leading to transaction failure (DoS for the caller). Potential impact: - Loss of funds: Users can be overcharged beyond their intended `exact_in_amount` if `calculate_fee` returns more than the input. - Denial of service: Wrapped amounts will trigger failing system transfers (insufficient funds), reverting the transaction. Where it occurs: - handler() buy branch: statement `buy_amount_applied = exact_in_amount - fee_lamports` - complete_sell(): statement `sell_amount_minus_fee = sell_result.sol_amount - fee_lamports`",
+      "vulnerability_type": "integer underflow/unchecked arithmetic",
+      "severity": "medium",
+      "confidence": 0.75,
+      "location": "handler() buy branch and complete_sell()",
+      "file": "swap.rs",
+      "id": "4e482b11544c3a17",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Unverified external program accounts (system, token_metadata, associated_token) allow SOL drain via malicious CPI",
+      "description": "The instruction accepts multiple critical program accounts as UncheckedAccount without verifying their program IDs and then invokes them via CPI while providing signer privileges and payer funds. Specifically: (1) system_program is UncheckedAccount and is used implicitly by the init directives to create the mint and bonding_curve accounts with payer = creator; (2) associated_token_program is UncheckedAccount and is used by init_if_needed, associated_token to create the bonding_curve_token_account with payer = creator; (3) token_metadata_program is UncheckedAccount and is invoked in intialize_meta() using create_metadata_accounts_v3, passing creator (a signer) and system_program, and granting the bonding_curve PDA signer privileges via invoke_signed. If any of these accounts are spoofed to a malicious program, that program can perform arbitrary CPIs (e.g., SystemProgram::transfer) using the creator signer to transfer SOL to attacker-controlled accounts, causing immediate fund loss. It can also create/assign arbitrary accounts and manipulate metadata, leading to protocol misuse.\nWhere: CreateBondingCurve accounts struct fields system_program, associated_token_program, token_metadata_program; used by account initializers (init, init_if_needed) and in intialize_meta().\nWhy it's a security issue: Invoking an attacker-controlled program with signer privileges and payer funds enables theft of the creator's SOL and other unauthorized actions.\nPotential impact: Immediate loss of all lamports from the creator/payer; creation of fraudulent metadata; denial-of-service.",
+      "vulnerability_type": "untrusted external call / program ID spoofing",
+      "severity": "critical",
+      "confidence": 0.95,
+      "location": "CreateBondingCurve.accounts (system_program, associated_token_program, token_metadata_program); CreateBondingCurve::intialize_meta(); implicit CPIs from init/init_if_needed in accounts",
+      "file": "create_bonding_curve.rs",
+      "id": "6f27a28ebf2aea3b",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Custom validate() not invoked, allowing whitelist and scheduling checks to be bypassed",
+      "description": "A validate method is defined to enforce critical business rules (start_slot bounds, whitelist enforcement when global.whitelist_enabled is true, and configuration freshness via global.is_config_outdated), but it is never called from the handler. Anchor does not automatically call this custom validate() function; thus these checks are effectively dead code and not enforced at runtime.\nWhere: CreateBondingCurve::validate() and CreateBondingCurve::handler() (no call to validate).\nWhy it's a security issue: Intended access-control and parameter constraints are bypassed, enabling unauthorized users to create bonding curves even when whitelisting is enabled and allowing out-of-policy start times or outdated configs.\nPotential impact: Unauthorized access/creation, protocol rule bypass, potential ecosystem or market manipulation, and denial-of-service through spam creations.",
+      "vulnerability_type": "access control / business logic bypass",
+      "severity": "high",
+      "confidence": 0.88,
+      "location": "CreateBondingCurve::validate(); CreateBondingCurve::handler()",
+      "file": "create_bonding_curve.rs",
+      "id": "e4738aad592dd953",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "migration_token_allocation parameter is validated but never stored (state inconsistency/validation bypass)",
+      "description": "GlobalSettingsInput includes migration_token_allocation and validate_settings() uses it to enforce that token_total_supply - migration_token_allocation > initial_real_token_reserves. However, update_settings() does not write the provided migration_token_allocation to self.migration_token_allocation. This allows the Global account to pass validation with a proposed allocation while keeping the old stored allocation, breaking the invariant assumed by validation. Downstream logic that relies on self.migration_token_allocation may then operate with an incompatible value relative to the newly updated supply/reserve parameters, potentially causing over-allocation, underflows, or denial of service depending on how the field is used elsewhere.",
+      "vulnerability_type": "logic error / invariant violation",
+      "severity": "medium",
+      "confidence": 0.9,
+      "location": "update_settings() function",
+      "file": "global.rs",
+      "id": "44f5c116acb03f0c",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Caller-controlled last_updated_slot enables bypass of restart-based freshness checks",
+      "description": "update_settings() takes a slot parameter and assigns it directly to last_updated_slot. is_config_outdated() then compares last_updated_slot with the LastRestartSlot sysvar to determine staleness. If an instruction handler forwards an untrusted client-supplied slot or lacks strict authority checks, an attacker could set last_updated_slot to a very large value, causing is_config_outdated() to return false even after cluster restarts and bypass any logic that relies on this freshness check. To mitigate, derive the slot from the Clock sysvar within the program (not from user input) before calling update_settings().",
+      "vulnerability_type": "improper input validation",
+      "severity": "low",
+      "confidence": 0.6,
+      "location": "update_settings() and is_config_outdated() functions",
+      "file": "global.rs",
+      "id": "199453ae5c89ebb9",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Authorities can be set to the default (zero) pubkey, potentially bricking admin control",
+      "description": "update_authority() sets global_authority and migration_authority to the provided values without validation. This permits setting either to Pubkey::default(), which can permanently lock configuration or migration actions if no alternative control path exists. If an attacker ever reaches this method due to misconfigured access control at the instruction level, they could cause a denial of service by nullifying authorities. Even legitimate operators could accidentally brick admin functions. Consider disallowing zero pubkeys except via an explicit 'renounce' flow with additional safeguards.",
+      "vulnerability_type": "improper access control / unsafe configuration",
+      "severity": "low",
+      "confidence": 0.55,
+      "location": "update_authority() function",
+      "file": "global.rs",
+      "id": "e5d3701519ad865f",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Whitelist removal instruction is a no-op (privilege revocation failure)",
+      "description": "The remove_wl instruction is implemented as a no-op and does not call the expected handler nor modify any whitelist state. Specifically, the function remove_wl(_ctx: Context<RemoveWl>) -> Result<()> simply returns Ok(()) without performing any action. As a result, any previously whitelisted address cannot be removed, making whitelist privileges effectively permanent. If whitelist membership gates privileged operations (e.g., creating bonding curves, pool management, or parameter changes), this leads to the inability to revoke access from compromised or malicious accounts, enabling unauthorized continued access and potential protocol manipulation.",
+      "vulnerability_type": "access control / privilege revocation failure",
+      "severity": "high",
+      "confidence": 0.95,
+      "location": "remove_wl(_ctx: Context<RemoveWl>) function, lines 40-42",
+      "file": "lib.rs",
+      "id": "77afcf27a6c78164",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 27754,
+    "output_tokens": 83132,
+    "total_tokens": 110886
+  }
+}

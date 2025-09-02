@@ -1,0 +1,86 @@
+{
+  "project": "sherlock_tally_2024_12",
+  "timestamp": "2025-09-02T14:52:34.765681",
+  "files_analyzed": 7,
+  "files_skipped": 0,
+  "total_findings": 6,
+  "findings": [
+    {
+      "title": "Overflow-triggered revert in getNewEarningPower due to unbounded updateEligibilityDelay causes DoS",
+      "description": "The function getNewEarningPower computes whether the update delay has elapsed using (timeOfIneligibility[_delegatee] + updateEligibilityDelay) <= block.timestamp. Because Solidity 0.8 reverts on arithmetic overflow, setting updateEligibilityDelay to a very large value (e.g., close to type(uint256).max) can cause the addition to overflow and revert whenever timeOfIneligibility[_delegatee] > 0 (i.e., after a delegatee has once transitioned from eligible to ineligible). This will make getNewEarningPower revert for those delegatees, potentially breaking any integrator logic that relies on calling this function on-chain, leading to a denial of service for earning power updates. The issue occurs in getNewEarningPower() when calculating _isUpdateDelayElapsed, and is enabled by the lack of bounds/validation in setUpdateEligibilityDelay/_setUpdateEligibilityDelay.",
+      "vulnerability_type": "denial of service",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": "getNewEarningPower() calculation of _isUpdateDelayElapsed; setUpdateEligibilityDelay()/_setUpdateEligibilityDelay() allow unbounded values",
+      "file": "BinaryEligibilityOracleEarningPowerCalculator.sol",
+      "id": "7868b6e18f00e5d8",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Missing zero-address validation for critical roles can disable oracle updates (accidental DoS)",
+      "description": "The contract allows setting scoreOracle and oraclePauseGuardian to the zero address without checks. Setting scoreOracle to address(0) makes updateDelegateeScore permanently unusable until reconfigured, which can lead to oracle staleness and force all stakers to receive full earning power after STALE_ORACLE_WINDOW elapses. Similarly, misconfiguring oraclePauseGuardian to address(0) prevents the guardian from pausing/unpausing directly (owner can still recover by changing the guardian). While owner-controlled, this lack of validation increases the risk of accidental or malicious misconfiguration causing temporary denial of service or unintended protocol behavior. The issue occurs in setScoreOracle/_setScoreOracle and setOraclePauseGuardian/_setOraclePauseGuardian which accept arbitrary addresses including zero.",
+      "vulnerability_type": "access control / misconfiguration",
+      "severity": "low",
+      "confidence": 0.7,
+      "location": "setScoreOracle()/_setScoreOracle(); setOraclePauseGuardian()/_setOraclePauseGuardian()",
+      "file": "BinaryEligibilityOracleEarningPowerCalculator.sol",
+      "id": "2f9c580ce989888e",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Improper access control on reward claims allows deposit owner to bypass designated claimer",
+      "description": "The claimReward function allows either the deposit owner OR the designated claimer to withdraw rewards and directs the payout to msg.sender. This contradicts the documented intent that only the claimer should have the right to withdraw rewards and that tokens are sent to the claimer address. As a result, when the claimer is a distinct party (e.g., a service or integrator), the deposit owner can front-run or otherwise claim the rewards to themselves, bypassing the designated claimer and any intended revenue-sharing or operational flow.\nWhere: claimReward() function\nWhy it's a security issue: It breaks the access control boundary implied by the \"claimer\" role, enabling unauthorized reward redirection by the owner when the claimer is intended to be the sole authorized withdrawer.\nPotential impact: Loss of funds for the intended claimer/integrator; violation of protocol assumptions and integrations relying on claimer exclusivity.",
+      "vulnerability_type": "access control",
+      "severity": "high",
+      "confidence": 0.9,
+      "location": "claimReward() function",
+      "file": "GovernanceStaker.sol",
+      "id": "de4c63dfa7c3bd33",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Use of fee-on-transfer/non-standard ERC20 as stake token can lock funds (DoS)",
+      "description": "The contract assumes STAKE_TOKEN is a standard, non-deflationary ERC20. It credits deposits with the requested amount before transferring tokens and moves staked tokens between surrogate and owner using transferFrom without adjusting for transfer fees or deflation. If STAKE_TOKEN charges transfer fees, rebases, or otherwise transfers less than the requested amount, the surrogate may not hold the accounted balance. Subsequent withdraw or delegatee change operations that attempt to transfer the full accounted amount will revert, effectively locking user funds.\nWhere: _stake(), _stakeMore(), _alterDelegatee(), _withdraw() pathways that call _stakeTokenSafeTransferFrom(..., _amount)\nWhy it's a security issue: Incompatible token behavior can cause persistent reverts on withdrawals or internal transfers, resulting in denial of service for users\u2019 staked funds.\nPotential impact: Permanent or long-term inability to withdraw staked tokens; denial of service.",
+      "vulnerability_type": "denial of service",
+      "severity": "medium",
+      "confidence": 0.75,
+      "location": "_stake(), _stakeMore(), _alterDelegatee(), _withdraw() via _stakeTokenSafeTransferFrom",
+      "file": "GovernanceStaker.sol",
+      "id": "8fddf453d7d5427f",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Authorized reward notifier can cause global claim DoS by notifying without funding",
+      "description": "notifyRewardAmount updates the reward rate based on the provided _amount and only performs a coarse balance check against the contract\u2019s current REWARD_TOKEN balance. A whitelisted notifier can call this function without actually transferring tokens (or transfer insufficient tokens), leading to a shortfall when users claim. SafeERC20.safeTransfer in claim paths will then revert due to insufficient balance, blocking all claims until the shortfall is covered. The code comments acknowledge this limitation and rely on admin whitelisting discipline, but from a protocol perspective it is still a DoS vector controlled by the notifier role.\nWhere: notifyRewardAmount(uint256 _amount)\nWhy it's a security issue: A privileged/notifier account can halt claims for all users by misreporting rewards.\nPotential impact: Denial of service for reward claims across the protocol until additional funds are provided.",
+      "vulnerability_type": "privileged griefing / denial of service",
+      "severity": "low",
+      "confidence": 0.6,
+      "location": "notifyRewardAmount(uint256)",
+      "file": "GovernanceStaker.sol",
+      "id": "88c764bca5f89a31",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Unchecked ERC20 approve return value can cause allowance to silently fail",
+      "description": "The constructor calls _token.approve(msg.sender, type(uint256).max) without checking the returned boolean. Some ERC20 tokens are non-standard and may return false instead of reverting on failure. In such cases, deployment will succeed but the allowance will remain zero, preventing the deployer from moving tokens from this contract. This can lead to a denial of service for legitimate operations and potentially trap funds sent to the surrogate. Location: constructor(IERC20 _token), line 12. Impact: If used with a token that returns false on approve (non-reverting), the deployer will be unable to transferFrom tokens held by the surrogate, effectively locking funds with no recovery path provided by this contract.",
+      "vulnerability_type": "ERC20 return value not checked / denial of service",
+      "severity": "medium",
+      "confidence": 0.75,
+      "location": "constructor(IERC20 _token), line 12",
+      "file": "DelegationSurrogate.sol",
+      "id": "e2d2146dac2fc6d9",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 20294,
+    "output_tokens": 36745,
+    "total_tokens": 57039
+  }
+}

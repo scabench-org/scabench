@@ -16,19 +16,37 @@ A comprehensive framework for evaluating security analysis tools and AI agents o
 
 ## Available Curated Datasets
 
-| Dataset | Report | Time Range | Projects | Vulnerabilities | High/Critical | Total LoC | Solidity LoC |
-|---------|--------|------------|----------|-----------------|---------------|-----------|--------------|
-| [curated-2025-08-18.json](./datasets/curated-2025-08-18.json) | [Report](./datasets/curated-2025-08-18.md) | 2024-08 to 2025-08 | **31** | **555** | **114** | 3.3M | 267K |
+> **Note**: New datasets are added regularly to prevent models from being trained on known results and to maintain benchmark integrity.
 
-**Dataset Statistics:**
-- **Source**: 269 original projects filtered to 31 high-quality projects
-- **Platforms**: Code4rena, Cantina, and Sherlock
-- **Languages**: Solidity, Rust, Go, TypeScript, Move, Cairo
-- **Curation Criteria**: 
-  - Accessible GitHub repositories
-  - ≥5 vulnerabilities per project
-  - ≥1 high/critical severity finding
-  - Recent audits (2024-2025)
+### Current Dataset: curated-2025-08-18
+**Location**: `datasets/curated-2025-08-18/curated-2025-08-18.json`
+
+The most current dataset contains contest scope repositories with expected vulnerabilities from audit competitions:
+- **31 projects** from Code4rena, Cantina, and Sherlock platforms  
+- **555 total vulnerabilities** (114 high/critical severity)
+- **Time range**: 2024-08 to 2025-08
+- **Data format**: JSON with project metadata including:
+  - `project_id`: Unique identifier for each project
+  - `codebases`: Repository URLs, commit hashes, and download links
+  - `vulnerabilities`: Array of findings with severity, title, and detailed descriptions
+
+### Baseline Results
+**Location**: `datasets/curated-2025-08-18/baseline-results/`
+
+Pre-computed baseline results from analyzing each individual file with GPT-5:
+- **Approach**: Single-file analysis using GPT-5 to identify vulnerabilities
+- **Coverage**: One baseline file per project (e.g., `baseline_cantina_minimal-delegation_2025_04.json`)
+- **Data format**: JSON containing:
+  - `project`: Project identifier
+  - `files_analyzed`: Number of files processed
+  - `total_findings`: Count of vulnerabilities found
+  - `findings`: Array of identified issues with:
+    - `title`: Brief vulnerability description
+    - `description`: Detailed explanation
+    - `severity`: Risk level (high/medium/low)
+    - `confidence`: Model's confidence score
+    - `location`: Specific code location
+    - `file`: Source file name
 
 ## What Each Component Does
 
@@ -83,13 +101,13 @@ python baseline-runner/baseline_runner.py \
   --source sources/my_project
 ```
 
-### 📈 **Scorer** (`scoring/scorer.py`)
-Evaluates ANY tool's findings against the benchmark using LLM matching.
+### 📈 **Scorer** (`scoring/scorer_v2.py`)
+Evaluates ANY tool's findings against the benchmark using LLM matching with one-by-one comparison for better consistency.
 
 **Important: Model Requirements**
-- The scorer uses batch matching - sends ALL findings to the LLM in a single call
-- Requires a model with sufficient context window to handle large projects
-- **Recommended**: `gpt-5-mini` (optimal balance of accuracy and speed)
+- The scorer uses one-by-one matching - processes each expected finding sequentially
+- More deterministic than batch matching with fixed seed and zero temperature
+- **Recommended**: `gpt-4o` (default, best accuracy)
 - **Alternative**: `gpt-4o-mini` (faster, cheaper, good for testing)
 
 #### Scoring a Single Project
@@ -98,18 +116,19 @@ Evaluates ANY tool's findings against the benchmark using LLM matching.
 
 ```bash
 # Example: Score results for a single project
-python scoring/scorer.py \
-  --benchmark datasets/curated-2025-08-18.json \
-  --results baseline_results/baseline_code4rena_iq_ai_2025_03.json \
+python scoring/scorer_v2.py \
+  --benchmark datasets/curated-2025-08-18/curated-2025-08-18.json \
+  --results-dir datasets/curated-2025-08-18/baseline-results/ \
   --project code4rena_iq-ai_2025_03 \
-  --model gpt-5-mini
+  --model gpt-4o \
+  --confidence-threshold 0.75
 
-# General format
-python scoring/scorer.py \
-  --benchmark datasets/curated-2025-08-18.json \
-  --results baseline_results/baseline_<PROJECT_NAME>.json \
-  --project <EXACT_PROJECT_ID_FROM_DATASET> \
-  --model gpt-5-mini
+# With verbose output to see matching details
+python scoring/scorer_v2.py \
+  --benchmark datasets/curated-2025-08-18/curated-2025-08-18.json \
+  --results-dir datasets/curated-2025-08-18/baseline-results/ \
+  --project code4rena_iq-ai_2025_03 \
+  --verbose
 ```
 
 Note: The `--project` parameter must match the exact `project_id` field from the benchmark dataset JSON. Check the dataset file if unsure about the correct project ID.
@@ -120,18 +139,31 @@ To score all baseline results at once:
 
 ```bash
 # Score all baseline results in a directory
-python scoring/scorer.py \
-  --benchmark datasets/curated-2025-08-18.json \
-  --results-dir baseline_results/ \
+python scoring/scorer_v2.py \
+  --benchmark datasets/curated-2025-08-18/curated-2025-08-18.json \
+  --results-dir datasets/curated-2025-08-18/baseline-results/ \
   --output scores/ \
-  --model gpt-5-mini
+  --model gpt-4o \
+  --confidence-threshold 0.75
 
 # This will:
-# 1. Process all baseline_*.json files in the results directory
+# 1. Process all *.json files in the results directory
 # 2. Automatically extract and match project IDs
 # 3. Generate individual score files for each project
 # 4. Save results to the scores/ directory
+
+# With debug output
+python scoring/scorer_v2.py \
+  --benchmark datasets/curated-2025-08-18/curated-2025-08-18.json \
+  --results-dir datasets/curated-2025-08-18/baseline-results/ \
+  --output scores/ \
+  --debug
 ```
+
+#### Available Options
+- `--confidence-threshold`: Set matching confidence threshold (default: 0.75)
+- `--verbose`: Show detailed matching progress for each finding
+- `--debug`: Enable debug output for troubleshooting
 
 After scoring, generate a comprehensive report:
 ```bash
@@ -268,16 +300,16 @@ python dataset-generator/checkout_sources.py \
 python baseline-runner/baseline_runner.py \
   --project $PROJECT_ID \
   --source sources/${PROJECT_ID//-/_} \
-  --output baseline_results/ \
+  --output datasets/curated-2025-08-18/baseline-results/ \
   --model gpt-5-mini
 
 # Step 5: Score the results (IMPORTANT: use exact project ID with hyphens)
-python scoring/scorer.py \
-  --benchmark datasets/curated-2025-08-18.json \
-  --results baseline_results/baseline_${PROJECT_ID//-/_}.json \
+python scoring/scorer_v2.py \
+  --benchmark datasets/curated-2025-08-18/curated-2025-08-18.json \
+  --results-dir datasets/curated-2025-08-18/baseline-results/ \
   --project $PROJECT_ID \
   --output scores/ \
-  --model gpt-5-mini
+  --model gpt-4o
 
 # Step 6: Generate HTML report
 python scoring/report_generator.py \
@@ -309,16 +341,16 @@ for dir in sources/*/; do
   python baseline-runner/baseline_runner.py \
     --project "$project" \
     --source "$dir" \
-    --output baseline_results/ \
+    --output datasets/curated-2025-08-18/baseline-results/ \
     --model gpt-5-mini \
 done
 
 # Step 4: Score ALL baseline results
-python scoring/scorer.py \
-  --benchmark datasets/curated-2025-08-18.json \
-  --results-dir baseline_results/ \
+python scoring/scorer_v2.py \
+  --benchmark datasets/curated-2025-08-18/curated-2025-08-18.json \
+  --results-dir datasets/curated-2025-08-18/baseline-results/ \
   --output scores/ \
-  --model gpt-5-mini
+  --model gpt-4o
 
 # Step 5: Generate comprehensive report
 python scoring/report_generator.py \
@@ -347,11 +379,11 @@ python baseline-runner/baseline_runner.py \
   --project $PROJECT_ID \
   --source sources/${PROJECT_ID//-/_} \
   --model gpt-5-mini
-python scoring/scorer.py \
-  --benchmark datasets/curated-2025-08-18.json \
-  --results baseline_results/baseline_${PROJECT_ID//-/_}.json \
+python scoring/scorer_v2.py \
+  --benchmark datasets/curated-2025-08-18/curated-2025-08-18.json \
+  --results-dir datasets/curated-2025-08-18/baseline-results/ \
   --project $PROJECT_ID \
-  --model gpt-5-mini
+  --model gpt-4o
 python scoring/report_generator.py \
   --scores scores/ \
   --output test_report.html \
@@ -387,9 +419,10 @@ python baseline-runner/baseline_runner.py \
   --source sources/vulnerable_vault
 
 # 3. Score results
-python scoring/scorer.py \
-  --benchmark datasets/curated-2025-08-18.json \
-  --results baseline_results/baseline_vulnerable_vault.json
+python scoring/scorer_v2.py \
+  --benchmark datasets/curated-2025-08-18/curated-2025-08-18.json \
+  --results-dir datasets/curated-2025-08-18/baseline-results/ \
+  --project vulnerable_vault
 
 # 4. Generate report
 python scoring/report_generator.py \
@@ -429,8 +462,8 @@ your-tool analyze sources/project1/ > results/project1.json
 
 **Step 4: Score your results**
 ```bash
-python scoring/scorer.py \
-  --benchmark datasets/curated-2025-08-18.json \
+python scoring/scorer_v2.py \
+  --benchmark datasets/curated-2025-08-18/curated-2025-08-18.json \
   --results-dir results/
 ```
 

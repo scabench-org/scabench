@@ -1,0 +1,74 @@
+{
+  "project": "sherlock_20240913---final---perennial-v2-update-3-audit-report_2024_09",
+  "timestamp": "2025-09-02T06:53:52.065039",
+  "files_analyzed": 4,
+  "files_skipped": 0,
+  "total_findings": 5,
+  "findings": [
+    {
+      "title": "Unlimited approval to external Aave pool enables token drain if pool is compromised or malicious",
+      "description": "The initialize function grants an unlimited ERC20 allowance of the fiat token to the Aave V3 pool contract. In ERC20, an approved spender can transfer tokens from the approver at any time via transferFrom without further consent. If the Aave pool (an upgradeable contract controlled by external governance) is compromised, upgraded to a malicious implementation, or incorrectly configured at deployment, it could pull all fiat tokens from this reserve using the unlimited allowance.\n\nWhere: initialize(), fiat.approve(address(aave)); approximately line 36.\n\nWhy it's a security issue: Granting unbounded allowance to an upgradeable third-party contract creates a direct fund-loss vector in the event that contract is compromised or becomes malicious.\n\nPotential impact: Loss of all fiat tokens held by this reserve.",
+      "vulnerability_type": "unbounded external approval / trust in upgradeable third-party",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": "initialize() function, fiat.approve(address(aave)) around line 36",
+      "file": "AaveV3FiatReserve.sol",
+      "id": "2a5e0a54b891e271",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Asymmetric rounding on deposit/withdraw leads to systematic user value loss (dust accumulation)",
+      "description": "The contract converts between 18\u2011decimals (internal accounting/DSU) and a 6\u2011decimals fiat token using different rounding directions in deposit vs. withdrawal flows. In _pull (deposit), UFixed6Lib.from(amount, true) rounds up (line 32), causing users to transfer slightly more fiat than the exact 18\u21926 decimal conversion. In _push (withdraw), UFixed6Lib.from(amount) (line 37) likely rounds down by default, causing users to receive slightly fewer fiat tokens than the exact conversion. This asymmetry systematically accrues dust to the contract over time at users' expense. While each instance is small (\u2264 1 unit of the 6\u2011dec token), across many operations it can sum to meaningful value. If any privileged actor can later sweep or otherwise access this dust, it can translate into loss of user funds.",
+      "vulnerability_type": "numerical precision/rounding",
+      "severity": "low",
+      "confidence": 0.7,
+      "location": "_pull() function, line 32; _push() function, line 37",
+      "file": "NoopFiatReserve.sol",
+      "id": "4d5d5ac09ec2d884",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "No handling for fee-on-transfer/rebasing tokens can break accounting and lead to undercollateralization",
+      "description": "The reserve assumes the 6\u2011dec fiat token transfers the exact requested amount. In _pull (line 32) and _push (line 37), it does not check actual balances before/after transfer to detect transfer fees or rebases. If the fiat token is deflationary, fee-on-transfer, or rebasing, the contract may receive less than expected on deposits or send less/more than expected on withdrawals. Combined with higher-level mint/burn logic (in ReserveBase), this can cause minted DSU to be undercollateralized or users to receive less on redemption, leading to loss of funds or insolvency. The code comments suggest USDC/USDT as targets (which are not fee-on-transfer), but there is no on-chain enforcement of this assumption.",
+      "vulnerability_type": "token integration risk / accounting mismatch",
+      "severity": "medium",
+      "confidence": 0.6,
+      "location": "_pull() function, line 32; _push() function, line 37; _unallocated() function, line 42",
+      "file": "NoopFiatReserve.sol",
+      "id": "9cd6a4523842a7c6",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Rebalance can revert when Compound V3 market is illiquid, leading to DoS",
+      "description": "The _update function unconditionally calls compound.withdraw for the full difference when collateral > target, and compound.supply when target > collateral. If the Compound V3 market lacks sufficient liquidity to satisfy the requested withdraw amount, compound.withdraw will revert. This revert can bubble up and block any higher-level operation that relies on _update (e.g., user withdrawals, rebalancing, or strategy lifecycle actions), resulting in a denial of service. An attacker or market participant can intentionally drain liquidity from the Compound market to trigger this condition, or normal market conditions could cause illiquidity. The lack of partial-withdraw handling or fallback paths increases the blast radius of external protocol illiquidity.",
+      "vulnerability_type": "denial of service",
+      "severity": "medium",
+      "confidence": 0.6,
+      "location": "_update() function",
+      "file": "CompoundV3FiatReserve.sol",
+      "id": "ca8d93d0244a2ce2",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Unlimited token approval to an upgradeable third-party protocol can enable fund drain if governance is compromised",
+      "description": "During initialization, the contract grants unlimited allowance of the fiat token to the Compound V3 market (fiat.approve(address(compound))). Compound V3 (Comet) is typically upgradeable via external governance. If the Compound market implementation or its governance/admin is compromised or malicious, it could use the unlimited allowance to transfer arbitrary amounts of fiat from this reserve, causing loss of funds. While approving infinite allowance is common for integrations, it introduces a trust assumption on the external protocol's security and governance that can escalate into a total loss scenario.",
+      "vulnerability_type": "external dependency risk / improper allowance management",
+      "severity": "medium",
+      "confidence": 0.7,
+      "location": "initialize() function",
+      "file": "CompoundV3FiatReserve.sol",
+      "id": "cd3cf26d8329cc0d",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 4729,
+    "output_tokens": 24129,
+    "total_tokens": 28858
+  }
+}

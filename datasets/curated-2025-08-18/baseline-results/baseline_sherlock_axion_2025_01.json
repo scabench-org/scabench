@@ -1,0 +1,98 @@
+{
+  "project": "sherlock_axion_2025_01",
+  "timestamp": "2025-09-02T07:52:02.726728",
+  "files_analyzed": 5,
+  "files_skipped": 0,
+  "total_findings": 7,
+  "findings": [
+    {
+      "title": "Arithmetic overflow in boostPrice() due to multiplication before division",
+      "description": "The boostPrice() view function computes price using expressions that multiply large values before dividing, which can overflow uint256 and revert. Specifically: when boost < usd, it computes price = (10 ** (boostDecimals - usdDecimals + PRICE_DECIMALS) * sqrtPriceX96 ** 2) / Q96 ** 2; and when boost >= usd and sqrtPriceX96 < Q96, it computes price = (10 ** (boostDecimals - usdDecimals + PRICE_DECIMALS) * Q96 ** 2) / sqrtPriceX96 ** 2;. In typical scenarios (e.g., boostDecimals=18, usdDecimals=6, PRICE_DECIMALS=18), the factor 10**30 multiplied by sqrtPriceX96**2 (which is around Q96**2 \u2248 6e57 when the price is ~1) yields ~6e87, which exceeds the uint256 limit (~1e77), causing a revert before the division can reduce the magnitude. This can occur under normal pool states and token decimal configurations. Impact: Any call to boostPrice() can revert, which in turn causes higher-level operations that call it (e.g., _mintSellFarm and _unfarmBuyBurn, which compute newBoostPrice) to revert, resulting in a denial of service for strategy operations and potentially halting protocol functionality.",
+      "vulnerability_type": "integer overflow / denial of service",
+      "severity": "high",
+      "confidence": 0.9,
+      "location": "boostPrice() function (end of file): both branches using (10 ** (...)) * sqrtPriceX96 ** 2 / Q96 ** 2 and (10 ** (...)) * Q96 ** 2 / sqrtPriceX96 ** 2",
+      "file": "SolidlyV3AMO.sol",
+      "id": "2d39890f34d73ac9",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Under-collateralized mint via floor rounding in collateral transfer",
+      "description": "In mint(), the collateral amount to transfer is computed as amount / (10 ** (boostDecimals - collateralDecimals)). This integer division floors the result. If amount < 10**(boostDecimals - collateralDecimals), the computed collateral is 0, meaning the caller can mint non-zero BOOST for zero collateral. Even when above the threshold, splitting a large mint into many smaller mints allows repeatedly discarding rounding remainders, cumulatively minting BOOST with less collateral than intended. This occurs in mint() at the expression amount / (10 ** (boostDecimals - collateralDecimals)). Security issue: Allows economic manipulation/undercollateralized supply by role holders (MINTER_ROLE) through strategic batching/splitting of mints. Potential impact: Inflation of BOOST supply without full collateral backing, leading to loss of peg or treasury shortfall.",
+      "vulnerability_type": "precision/rounding error (economic manipulation)",
+      "severity": "high",
+      "confidence": 0.9,
+      "location": "mint() function, collateral transfer calculation: amount / (10 ** (boostDecimals - collateralDecimals))",
+      "file": "Minter.sol",
+      "id": "c5a06aa149d9e6e8",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Mint DoS due to unsafe decimals difference (underflow/overflow in scaling factor)",
+      "description": "The scaling factor uses 10 ** (boostDecimals - collateralDecimals) with boostDecimals and collateralDecimals sourced from IERC20Metadata.decimals(). If collateralDecimals > boostDecimals, (boostDecimals - collateralDecimals) underflows (uint8) and the exponentiation reverts, permanently breaking mint(). Additionally, even when boostDecimals >= collateralDecimals, if the difference exceeds ~77, 10 ** diff overflows uint256 and reverts. Admin can set tokens with arbitrary decimals via setTokens(), making this a realistic misconfiguration vector. This occurs in mint() at amount / (10 ** (boostDecimals - collateralDecimals)); same risk is introduced by setTokens() when updating decimals. Security issue: Causes denial of service for minting, potentially halting protocol operations. Potential impact: Inability to mint via the collateralized path; system disruption.",
+      "vulnerability_type": "arithmetic overflow/underflow leading to denial of service",
+      "severity": "medium",
+      "confidence": 0.8,
+      "location": "mint() function scaling factor; decimals set in initialize() and setTokens()",
+      "file": "Minter.sol",
+      "id": "a1f48330cc1bfd53",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Privileged address can mint unlimited tokens",
+      "description": "The mint function is restricted by MINTER_ROLE but has no quantitative caps or additional safeguards, allowing any holder of MINTER_ROLE (or a compromised DEFAULT_ADMIN_ROLE that can grant itself MINTER_ROLE) to mint arbitrary amounts of BOOST to any address. This occurs in mint(address to, uint256 amount). This is a security issue because a compromised or malicious minter can inflate supply, devalue holders, and siphon value by minting to themselves or accomplices. Potential impact includes loss of value for token holders via uncontrolled inflation and protocol manipulation if BOOST is used as collateral elsewhere.",
+      "vulnerability_type": "privileged role abuse / centralization risk",
+      "severity": "medium",
+      "confidence": 0.95,
+      "location": "mint() function",
+      "file": "BoostStablecoin.sol",
+      "id": "c887df91b2bba6c6",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Global pause can cause total transfer DoS",
+      "description": "The contract enforces whenNotPaused in _beforeTokenTransfer, which blocks all transfers, mints, and burns when paused. Only PAUSER_ROLE can pause and only UNPAUSER_ROLE can unpause. If PAUSER_ROLE is misused or compromised, all token operations can be halted indefinitely, causing a denial of service. This occurs in pause(), unpause(), and the override of _beforeTokenTransfer(address from, address to, uint256 amount) with whenNotPaused. Impact: holders are unable to transfer, receive, mint, or burn tokens until an address with UNPAUSER_ROLE intervenes; if governance keys are lost/compromised or misconfigured, the token can remain frozen.",
+      "vulnerability_type": "denial of service via privileged pause",
+      "severity": "medium",
+      "confidence": 0.95,
+      "location": "pause(), unpause(), and _beforeTokenTransfer() override",
+      "file": "BoostStablecoin.sol",
+      "id": "2984abb6cf4dd177",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Decimal conversion underflow in toBoostAmount/toUsdAmount can cause DoS",
+      "description": "The helper functions toBoostAmount and toUsdAmount assume boostDecimals >= usdDecimals and compute 10 ** (boostDecimals - usdDecimals). If boostDecimals < usdDecimals (e.g., BOOST has 6 decimals and USD token has 18), the subtraction underflows in Solidity 0.8.x and reverts on every call that reaches these functions. This can brick code paths that rely on these conversions, potentially preventing AMO operations.\n\nWhere: toBoostAmount() and toUsdAmount() functions (decimal exponent calculation).\n\nWhy it's a security issue: A misconfigured or unexpected token decimal setting can trigger consistent reverts, leading to a denial of service of AMO operations that depend on these conversions. Since initialize() does not validate the relative decimals, this can be deployed in a broken state or later swapped tokens could cause failures.\n\nPotential impact: Denial of service of critical flows (e.g., liquidity management, swaps) in inheriting contracts that use these helpers; funds may be stuck until an upgrade or redeploy.",
+      "vulnerability_type": "arithmetic underflow / input validation",
+      "severity": "medium",
+      "confidence": 0.85,
+      "location": "toBoostAmount(uint256) and toUsdAmount(uint256)",
+      "file": "MasterAMO.sol",
+      "id": "65da05fe68a4fad6",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Unbounded validRangeWidth may underflow range check and brick mint-sell-farm logic",
+      "description": "The condition used to decide whether to add liquidity in _mintSellFarm computes FACTOR - validRangeWidth without validating that validRangeWidth <= FACTOR. If validRangeWidth > FACTOR (FACTOR is 1e6), the subtraction underflows in Solidity 0.8.x and reverts whenever this code path is reached.\n\nWhere: _mintSellFarm(uint256,uint256,uint256,uint256,uint256) internal function, in the condition: if (price > FACTOR - validRangeWidth && price < FACTOR + validRangeWidth) { ... }.\n\nWhy it's a security issue: An improperly set validRangeWidth can cause consistent reverts of the permissionless mintSellFarm flow and potentially other internal logic in inheriting contracts, creating a denial of service.\n\nPotential impact: DoS of the permissionless mint-sell-farm execution path; inability to add liquidity as intended until parameters are corrected.",
+      "vulnerability_type": "input validation / arithmetic underflow",
+      "severity": "low",
+      "confidence": 0.78,
+      "location": "_mintSellFarm(...) internal function (range check using FACTOR - validRangeWidth)",
+      "file": "MasterAMO.sol",
+      "id": "7c9c8c2f666788db",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 13200,
+    "output_tokens": 31837,
+    "total_tokens": 45037
+  }
+}

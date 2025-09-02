@@ -1,0 +1,110 @@
+{
+  "project": "code4rena_forte-float128-solidity-library_2025_04",
+  "timestamp": "2025-09-02T00:25:47.616515",
+  "files_analyzed": 4,
+  "files_skipped": 0,
+  "total_findings": 8,
+  "findings": [
+    {
+      "title": "Silent truncation/incorrect result in 512-by-256 division when quotient does not fit in 256 bits",
+      "description": "The function div512x256 computes the division of a 512-bit numerator (a1:a0) by a 256-bit denominator b under the stated precondition that the result fits into 256 bits. However, this precondition is not enforced. When the true quotient exceeds 256 bits, the function returns a silently truncated value (effectively the result modulo 2^256), without reverting or signaling an error. For example, with b = 1 and a1 > 0, the correct quotient is (a1 << 256) | a0, but the function returns only a0 (after the normalization path, it ultimately sets r := mul(a0, inv) with inv = 1 when b = 1). This leads to incorrect arithmetic that can corrupt protocol accounting or allow value manipulation in callers that rely on this library for exact arithmetic.",
+      "vulnerability_type": "arithmetic correctness/overflow (silent truncation)",
+      "severity": "high",
+      "confidence": 0.8,
+      "location": "div512x256() function, normalization path and final computation r := mul(a0, inv)",
+      "file": "Uint512.sol",
+      "id": "7e5ee566b7692b2e",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Division-by-zero revert if denominator b == 0 can be attacker-triggered DoS",
+      "description": "div512x256 does not check that b != 0. If b is zero, the assembly normalization executes b := div(b, pow) where pow is computed as 0, causing a division-by-zero revert. Alternatively, the fallback single-word division a0 / b would also revert. If a calling contract passes user-controlled values into this library without validating b > 0, an attacker can trigger unconditional reverts and disrupt protocol operations.",
+      "vulnerability_type": "denial of service (input validation / division by zero)",
+      "severity": "low",
+      "confidence": 0.7,
+      "location": "div512x256() function, initial assembly normalization (b := div(b, pow)) and potential a0 / b path",
+      "file": "Uint512.sol",
+      "id": "4b8136e659dad605",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Use of EVM STOP in sqrt(0) causes premature termination of caller",
+      "description": "In the sqrt function, the assembly block checks for zero input and executes the STOP opcode: `if iszero(a) { stop() }`. STOP terminates the entire execution context successfully and immediately, not just the function. This means any contract calling sqrt may have its execution halted before finishing critical logic, without reverting. As a result, prior state changes persist and subsequent checks/transfers are skipped. This can be exploited to force early exits, causing denial of service, skipped invariants, or inconsistent state (e.g., partial updates without corresponding transfers).",
+      "vulnerability_type": "unexpected termination / denial of service",
+      "severity": "high",
+      "confidence": 0.95,
+      "location": "sqrt(packedFloat) function, assembly block: `if iszero(a) { stop() }`",
+      "file": "Float128.sol",
+      "id": "b33996b7bcd23b0c",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Exponent not range-checked in toPackedFloat can corrupt encoding (bitfield overflow)",
+      "description": "toPackedFloat encodes the exponent with `shl(EXPONENT_BIT, add(exponent, ZERO_OFFSET))` but does not validate that `exponent` lies within the representable 14-bit range [-8192, 8191]. If a caller provides an out-of-range exponent, the left-shifted value can overflow the 14-bit exponent field and spill into adjacent bits (e.g., the mantissa sign bit or the L-flag), corrupting the packed representation. This can flip the sign, incorrectly mark L/M mantissa size, or otherwise create malformed floats. Downstream arithmetic and comparisons will then produce incorrect results, potentially enabling protocol manipulation or data corruption when such values are used for financial calculations.",
+      "vulnerability_type": "data corruption / arithmetic encoding overflow",
+      "severity": "medium",
+      "confidence": 0.7,
+      "location": "toPackedFloat(int mantissa, int exponent), final encoding: `float := or(float, or(mantissa, shl(EXPONENT_BIT, add(exponent, ZERO_OFFSET))))`",
+      "file": "Float128.sol",
+      "id": "e771b5f3e3abe07f",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "No validation of canonical mantissa size allows overflow in assembly math for forged inputs",
+      "description": "Many operations assume the mantissa has at most 38 (M) or 72 (L) digits. However, the library functions (add, sub, sqrt, comparisons, etc.) accept arbitrary packedFloat values without validating mantissa magnitude against the L-flag. An attacker can supply a non-canonical packedFloat with a very large mantissa (up to 242 bits due to MANTISSA_MASK). The code frequently multiplies mantissas by large powers of 10 in assembly, e.g., `aMan := mul(aMan, BASE_TO_THE_MAX_DIGITS_M)` or `aMan := mul(aMan, BASE_TO_THE_DIGIT_DIFF)`. With forged oversized mantissas, these multiplications can overflow 256-bit arithmetic in assembly and silently wrap modulo 2^256, producing unpredictable and incorrect results. This can corrupt calculations (e.g., comparisons, sums, sqrt pre-scaling), potentially leading to broken invariants and loss of funds in protocols that accept user-supplied packedFloat inputs.",
+      "vulnerability_type": "unchecked arithmetic / input validation",
+      "severity": "medium",
+      "confidence": 0.65,
+      "location": "Multiple functions using assembly scaling of mantissas (e.g., add(), sub(), sqrt(), lt/le/gt/ge()), examples: `aMan := mul(aMan, BASE_TO_THE_MAX_DIGITS_M)`, `aMan := mul(aMan, BASE_TO_THE_DIGIT_DIFF)`, `x := mul(aMan, BASE_TO_THE_MAX_DIGITS_M)` in sqrt()",
+      "file": "Float128.sol",
+      "id": "4528d1b11c8074b3",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Unchecked arithmetic in inline assembly can silently overflow/underflow",
+      "description": "Several helper branches use Yul assembly (add/mul/div) to build updatedMantissa without any bounds checks. In Yul, arithmetic wraps modulo 2^256 instead of reverting on overflow. If ln() (or these helpers directly) are called with an out-of-range or unnormalized mantissa, intermediate multiplications like mul(9, mantissa) can overflow and wrap, producing corrupted results instead of reverting. This occurs in the assembly blocks inside calculateQ2 (q2 == 5, q2 == 6, q2 == 7 branches) and calculateQ3 (q3 == 4, q3 == 5, q3 == 6, q3 == 7 branches). Because these functions are public and ln() performs no input normalization/validation, a caller can craft inputs that cause wrapped arithmetic. This is a security issue because it leads to data corruption and protocol manipulation risks if these math results feed into financial logic (e.g., pricing, collateral ratios).",
+      "vulnerability_type": "integer overflow/underflow (unchecked assembly arithmetic)",
+      "severity": "medium",
+      "confidence": 0.75,
+      "location": "calculateQ2() and calculateQ3() assembly blocks (multiple branches for q2 \u2208 {5,6,7} and q3 \u2208 {4,5,6,7})",
+      "file": "Ln.sol",
+      "id": "fc4f97ef6f9fc1de",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Division by zero due to unvalidated mantissa",
+      "description": "ln_helper divides by mantissa without checking it is non-zero. If ln() is called with a packedFloat whose mantissa is zero (or otherwise invalid), the code will attempt q1 = BASE_TO_THE_MAX_DIGITS_M_X_2 / mantissa and q2 = (BASE_TO_THE_MAX_DIGITS_M * r1) / mantissa, which revert with a division-by-zero panic. ln() extracts mantissa directly from the bitmask with no validation, so malformed inputs can trigger this. This is a DoS vector for any contract that forwards user-controlled packedFloat values to ln().",
+      "vulnerability_type": "denial of service (division by zero)",
+      "severity": "medium",
+      "confidence": 0.7,
+      "location": "ln_helper(), lines computing q1 and q2 (BASE_TO_THE_MAX_DIGITS_M_X_2 / mantissa and (...)/mantissa)",
+      "file": "Ln.sol",
+      "id": "9e5b2746806734f5",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    },
+    {
+      "title": "Unchecked assumption on mantissa range leads to panic on signed-to-unsigned cast",
+      "description": "intermediateTermAddition computes z_int = 10**76 - int(mantissa), then calls Float128.findNumberOfDigits(uint(z_int)). If mantissa > 10**76, z_int becomes negative and the explicit cast uint(z_int) will revert in Solidity \u22650.8 due to a failing checked conversion. Because mantissa originates from unvalidated input and can be scaled/increased earlier, malformed inputs can cause this unexpected panic. This can be exploited to cause denial-of-service in systems that pass user-controlled packedFloat values into ln().",
+      "vulnerability_type": "denial of service (unexpected revert due to invalid cast)",
+      "severity": "medium",
+      "confidence": 0.65,
+      "location": "intermediateTermAddition(), at `uint(z_int)` after `z_int = 10 ** 76 - int(mantissa)`",
+      "file": "Ln.sol",
+      "id": "75a5754e06741461",
+      "reported_by_model": "gpt-5",
+      "status": "proposed"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 29390,
+    "output_tokens": 27339,
+    "total_tokens": 56729
+  }
+}

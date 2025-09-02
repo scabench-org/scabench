@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / 'baseline-runner'))
 sys.path.insert(0, str(Path(__file__).parent.parent / 'scoring'))
 
 from baseline_runner import BaselineRunner, Finding, AnalysisResult
-from scorer import ScaBenchScorer, MatchResult, ScoringResult
+from scorer_v2 import ScaBenchScorerV2, ScoringResult
 from report_generator import ReportGenerator
 
 
@@ -157,43 +157,27 @@ class TestScorer:
     """Test the scoring component."""
     
     def test_initialization(self):
-        """Test ScaBenchScorer initialization."""
+        """Test ScaBenchScorerV2 initialization."""
         with patch('llm.get_model') as mock_get_model:
             mock_get_model.return_value = Mock()
             config = {'model': 'gpt-4o', 'api_key': 'test_key'}
-            scorer = ScaBenchScorer(config)
+            scorer = ScaBenchScorerV2(config)
             assert scorer.model_id == 'gpt-4o'
             assert scorer.api_key == 'test_key'
 
-    @patch.object(ScaBenchScorer, 'batch_match_findings_with_llm')
-    def test_score_project(self, mock_batch_match):
+    @patch.object(ScaBenchScorerV2, 'find_match_in_results')
+    def test_score_project(self, mock_find_match):
         """Test complete project scoring."""
-        # Setup mock for the batch matching method
-        mock_batch_match.return_value = {
-            "matches": [
-                {
-                    "expected_index": 0,
-                    "expected_title": "Reentrancy vulnerability in withdraw function",
-                    "found_index": 0,
-                    "found_title": "Reentrancy vulnerability in withdraw function",
-                    "confidence": 1.0,
-                    "justification": "Perfect match",
-                    "dismissal_reasons": []
-                },
-                {
-                    "expected_index": 1,
-                    "expected_title": "Missing zero address validation",
-                    "found_index": -1,
-                    "found_title": "None",
-                    "confidence": 0.0,
-                    "justification": "No match found",
-                    "dismissal_reasons": ["not_found"]
-                }
-            ],
-            "unmatched_found": [1]
-        }
+        # Setup mock for the find_match_in_results method
+        # It returns (is_match, matched_finding, reason, confidence)
+        # First call: perfect match for first expected vulnerability
+        # Second call: no match for second expected vulnerability
+        mock_find_match.side_effect = [
+            (True, SAMPLE_BASELINE_FINDINGS[0], "Perfect match", 1.0),  # First expected matches first found
+            (False, None, "No match found", 0.0)  # Second expected has no match
+        ]
         
-        scorer = ScaBenchScorer({'api_key': 'test'})
+        scorer = ScaBenchScorerV2({'api_key': 'test'})
         
         result = scorer.score_project(
             SAMPLE_BENCHMARK_DATA[0]['vulnerabilities'],
@@ -374,7 +358,7 @@ class TestIntegration:
         assert baseline_file.exists()
         
         # Step 2: Score the results
-        scorer = ScaBenchScorer({'api_key': 'test'})
+        scorer = ScaBenchScorerV2({'api_key': 'test'})
         
         # Load baseline results
         with open(baseline_file, 'r') as f:

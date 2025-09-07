@@ -22,8 +22,8 @@ from rich.panel import Panel
 from rich.table import Table
 from rich import box
 
-# LLM for analysis
-import llm
+# OpenAI client (direct, non-streaming)
+from openai import OpenAI
 
 console = Console()
 
@@ -84,13 +84,11 @@ class BaselineRunner:
             # We will pass the key to the prompt method if it exists.
             pass
 
+        # Initialize OpenAI client (uses env var if key not passed)
         try:
-            self.model = llm.get_model(self.model_id)
-        except llm.UnknownModelError:
-            console.print(f"[red]Error: Model '{self.model_id}' not found. Is the plugin installed?[/red]")
-            raise
+            self.client = OpenAI(api_key=self.api_key) if self.api_key else OpenAI()
         except Exception as e:
-            console.print(f"[red]Error initializing LLM model: {e}[/red]")
+            console.print(f"[red]Error initializing OpenAI client: {e}[/red]")
             raise
 
     def analyze_file(self, file_path: Path, content: str) -> tuple[List[Finding], int, int]:
@@ -130,19 +128,22 @@ DO NOT report:
 - Missing comments or documentation
 - Theoretical issues without practical exploit paths
 
-Return your findings as a JSON array. If no vulnerabilities found, return empty array: []
+Return your findings as JSON with top-level key "findings" (an array).
+If no vulnerabilities are found, return: {"findings": []}
 
 Example response:
-[
-  {
-    "title": "Reentrancy vulnerability in withdraw function",
-    "description": "The withdraw function sends ETH before updating state...",
-    "vulnerability_type": "reentrancy",
-    "severity": "high",
-    "confidence": 0.9,
-    "location": "withdraw() function, line 45"
-  }
-]"""
+{
+  "findings": [
+    {
+      "title": "Reentrancy vulnerability in withdraw function",
+      "description": "The withdraw function sends ETH before updating state...",
+      "vulnerability_type": "reentrancy",
+      "severity": "high",
+      "confidence": 0.9,
+      "location": "withdraw() function, line 45"
+    }
+  ]
+}"""
 
         user_prompt = f"""Analyze this {file_path.suffix} file for security vulnerabilities:
 
@@ -154,51 +155,34 @@ File: {file_path.name}
 Identify and report security vulnerabilities found."""
 
         try:
-            # Build extra params for models that support reasoning effort
-            extra_params = {}
-            if self.model_id in ['gpt-5-mini', 'gpt-5']:
-                extra_params['reasoning_effort'] = self.reasoning_effort
-            
-            response = self.model.prompt(
-                user_prompt,
-                system=system_prompt,
-                key=self.api_key,
-                # Request a JSON response that conforms to a schema
-                schema={
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "title": {"type": "string"},
-                            "description": {"type": "string"},
-                            "vulnerability_type": {"type": "string"},
-                            "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
-                            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-                            "location": {"type": "string"},
-                        },
-                        "required": ["title", "description", "vulnerability_type", "severity", "confidence", "location"],
-                    },
-                },
-                **extra_params
+            # Use Chat Completions (non-streaming) for maximum compatibility
+            completion = self.client.chat.completions.create(
+                model=self.model_id,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ]
             )
 
-            # Extract token usage
-            usage = response.usage if hasattr(response, 'usage') else None
+            # Token usage (if available)
             input_tokens = 0
             output_tokens = 0
-            if usage:
-                input_tokens = usage.prompt_tokens if hasattr(usage, 'prompt_tokens') else 0
-                output_tokens = usage.completion_tokens if hasattr(usage, 'completion_tokens') else 0
-            
-            # Parse response
-            if hasattr(response, 'text'):
-                result_text = response.text()
-            elif hasattr(response, 'content'):
-                result_text = response.content
-            else:
-                result_text = str(response)
-                
-            result = json.loads(result_text)
+            try:
+                usage = getattr(completion, 'usage', None)
+                if usage:
+                    input_tokens = getattr(usage, 'prompt_tokens', 0) or 0
+                    output_tokens = getattr(usage, 'completion_tokens', 0) or 0
+            except Exception:
+                pass
+
+            # Extract text
+            result_text = ""
+            try:
+                result_text = completion.choices[0].message.content or ""
+            except Exception:
+                result_text = ""
+
+            result = json.loads(result_text) if result_text else {}
             
             # Handle different response formats
             findings_data = []
@@ -259,7 +243,14 @@ Identify and report security vulnerabilities found."""
         if file_patterns:
             files = []
             for pattern in file_patterns:
-                files.extend(source_dir.glob(pattern))
+                # Normalize './' prefixes
+                pat = pattern[2:] if pattern.startswith('./') else pattern
+                # Glob matches (relative to source_dir)
+                files.extend(source_dir.glob(pat))
+                # If no glob match, treat as direct relative path
+                direct = (source_dir / pat)
+                if direct.is_file() and direct not in files:
+                    files.append(direct)
         else:
             # Default to common smart contract patterns
             patterns = ['**/*.sol', '**/*.vy', '**/*.cairo', '**/*.rs', '**/*.move']

@@ -475,9 +475,10 @@ def main():
                         if other_langs:
                             top_other = sorted(other_langs, key=lambda x: x[1]["lines"], reverse=True)[:3]
                             if top_other:
-                                other_str = ", ".join([f"{lang}: {data['lines']:,}" for lang, data in top_other])
-                                print(f"    - Other Languages: {other_str}")
-                else:
+
+                                other_langs_str = ", ".join([f"{lang}: {data['lines']:,}" for lang, data in top_other])
+                                print(f"    - Other Languages: {other_langs_str}")
+
                     print(f"  Code Statistics: Error - {cloc_stats['error']}")
             else:
                 cloc_stats = {"error": "cloc not available"}

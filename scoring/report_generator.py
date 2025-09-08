@@ -162,20 +162,60 @@ class ReportGenerator:
         """Generate HTML report from scoring results (single file or directory)."""
         console.print("Generating ScaBench report...")
         
+        # Optional: load benchmark to filter which score files to include
+        allowed_projects: Optional[set[str]] = None
+        if benchmark_file and benchmark_file.exists():
+            try:
+                with open(benchmark_file, 'r') as bf:
+                    bench = json.load(bf)
+                if isinstance(bench, dict) and 'projects' in bench:
+                    entries = bench['projects']
+                elif isinstance(bench, list):
+                    entries = bench
+                else:
+                    entries = []
+                allowed_projects = set()
+                for entry in entries:
+                    pid = entry.get('project_id') or entry.get('id')
+                    if isinstance(pid, str):
+                        allowed_projects.add(pid)
+                if not allowed_projects:
+                    console.print("[yellow]Benchmark file provided but no project IDs found; skipping filter[/yellow]")
+            except Exception as e:
+                console.print(f"[yellow]Warning: Failed to load benchmark file: {e}. Skipping filter.[/yellow]")
+
         # Determine if scores_path is a file or directory
         score_files = []
         if scores_path.is_file():
             # Single score file provided
             if scores_path.name.endswith('.json'):
-                score_files = [scores_path]
+                # Apply filter if benchmark provided
+                if allowed_projects and scores_path.name.startswith('score_'):
+                    pid = scores_path.stem[6:]
+                    if pid in allowed_projects:
+                        score_files = [scores_path]
+                    else:
+                        console.print(f"[yellow]Skipping {scores_path.name} (not in benchmark)[/yellow]")
+                        score_files = []
+                else:
+                    score_files = [scores_path]
             else:
                 console.print(f"[red]Invalid file: {scores_path} (must be .json)[/red]")
                 sys.exit(1)
         elif scores_path.is_dir():
             # Directory provided - look for score files
             score_files = list(scores_path.glob("score_*.json"))
+            # Apply benchmark filter if provided
+            if allowed_projects:
+                filtered = []
+                for sf in score_files:
+                    stem = sf.stem
+                    pid = stem[6:] if stem.startswith('score_') else stem
+                    if pid in allowed_projects:
+                        filtered.append(sf)
+                score_files = filtered
             if not score_files:
-                console.print(f"[red]No score_*.json files found in {scores_path}[/red]")
+                console.print(f"[red]No score_*.json files found in {scores_path} after filtering[/red]")
                 sys.exit(1)
         else:
             console.print(f"[red]Path not found: {scores_path}[/red]")

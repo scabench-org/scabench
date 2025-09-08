@@ -220,12 +220,11 @@ Type: {expected.get('type', 'N/A')}{hints_block}
 TOOL FINDINGS:
 {findings_text}
 
-STRICT MATCHING RULES:
-1. Must be the SAME vulnerability, not just similar type
-2. Must have the SAME location (e.g., filename and function name if present)
-3. Must have the SAME root cause
-4. Must describe the SAME attack vector
-5. Description of impact should be the same (slight variations allowed)
+## **Evaluation Criteria For True Positive:**
+- **Correctly identifies the contract** where the issue exists.
+- **Correctly identifies the function** where the issue occurs.
+- **Accurately describes the core security issue** (even if phrased differently).
+- **Accurately describes the potential consequences** (some variance allowed here as long as description is valid)
 
 Answer with a JSON object:
 {{

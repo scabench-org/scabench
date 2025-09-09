@@ -44,6 +44,7 @@ class ScoringResult:
     f1_score: float
     matched_findings: List[Dict[str, Any]]
     missed_findings: List[Dict[str, Any]]
+    undecided_findings: List[Dict[str, Any]]
     extra_findings: List[Dict[str, Any]]
     potential_matches: List[Dict[str, Any]]
 
@@ -58,6 +59,8 @@ class ScaBenchScorerV2:
         self.model_id = self.config.get('model', 'gpt-4o')
         self.api_key = self.config.get('api_key') or os.getenv("OPENAI_API_KEY")
         self.confidence_threshold = self.config.get('confidence_threshold', 0.75)
+        # Strict matching mode: no confidence ratings, only exact matches count
+        self.strict_matching = bool(self.config.get('strict_matching', False))
         
         if not self.api_key:
             # llm will fall back to other key mechanisms, so this is not a fatal error
@@ -149,10 +152,10 @@ Description: {self._truncate(finding.get('description', 'N/A'))}
 """
         return block
     
-    def find_match_in_results(self, expected: Dict, tool_findings: List[Dict]) -> Tuple[bool, Optional[Dict], str, float]:
+    def find_match_in_results(self, expected: Dict, tool_findings: List[Dict]) -> Tuple[bool, Optional[Dict], str, float, str]:
         """
         Check if an expected vulnerability exists in the tool findings.
-        Returns: (found_match, matched_finding, justification)
+        Returns: (found_match, matched_finding, justification, confidence, decision)
         """
 
         def _prompt_with_fallback(prompt: str, system: str, schema: Dict[str, Any]):
@@ -202,6 +205,7 @@ Description: {self._truncate(finding.get('description', 'N/A'))}
         best_conf = -1.0
         best_global_idx: Optional[int] = None
         best_reason = ''
+        undecided_reason = ''
 
         # Iterate in chunks
         for start in range(0, len(indices), max(self.chunk_size, 1)):
@@ -209,7 +213,45 @@ Description: {self._truncate(finding.get('description', 'N/A'))}
             chunk_findings = [tool_findings[i] for i in chunk_idx]
 
             findings_text = self._build_findings_block(chunk_findings)
-            prompt = f"""You are a security expert tasked with finding if a specific vulnerability was detected.
+            if self.strict_matching:
+                prompt = f"""You are a security expert tasked with deciding if a specific vulnerability was detected.
+
+EXPECTED VULNERABILITY:
+Title: {expected.get('title', 'N/A')}
+Description: {self._truncate(expected.get('description', 'N/A'))}
+Severity: {expected.get('severity', 'N/A')}
+Type: {expected.get('type', 'N/A')}{hints_block}
+
+TOOL FINDINGS:
+{findings_text}
+
+## Strict True Positive Criteria (ALL must be clearly satisfied):
+- Correct contract/location is identified (names or unique identifiers match).
+- Correct function/entrypoint is identified when applicable.
+- Core vulnerability mechanism/cause matches exactly.
+- Consequences/impact align with the expected issue (allow minor phrasing differences only).
+
+Important: If any element is uncertain or ambiguous, choose "undecided". Do not guess.
+
+Respond with a JSON object using this schema (no confidence score):
+{{
+  "decision": "match" | "undecided" | "no",
+  "matching_index": null or index of the matching finding,
+  "reason": "brief explanation"
+}}
+
+If you choose "match", provide the BEST matching index. Only choose "match" if you are 100% confident that all strict criteria are met."""
+                response_schema = {
+                    "type": "object",
+                    "properties": {
+                        "decision": {"type": "string", "enum": ["match", "undecided", "no"]},
+                        "matching_index": {"type": ["integer", "null"]},
+                        "reason": {"type": "string"}
+                    },
+                    "required": ["decision", "matching_index", "reason"]
+                }
+            else:
+                prompt = f"""You are a security expert tasked with finding if a specific vulnerability was detected.
 
 EXPECTED VULNERABILITY:
 Title: {expected.get('title', 'N/A')}
@@ -244,21 +286,22 @@ Return confidence between 0.0-1.0 based on match quality:
 - Below 0.5 = Poor match or different vulnerability
 
 When in doubt, lean towards lower confidence."""
+                response_schema = {
+                    "type": "object",
+                    "properties": {
+                        "found": {"type": "boolean"},
+                        "matching_index": {"type": ["integer", "null"]},
+                        "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                        "reason": {"type": "string"}
+                    },
+                    "required": ["found", "matching_index", "confidence", "reason"]
+                }
 
             try:
                 response = _prompt_with_fallback(
                     prompt,
                     system="You are a precise vulnerability matcher. Be strict.",
-                    schema={
-                        "type": "object",
-                        "properties": {
-                            "found": {"type": "boolean"},
-                            "matching_index": {"type": ["integer", "null"]},
-                            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-                            "reason": {"type": "string"}
-                        },
-                        "required": ["found", "matching_index", "confidence", "reason"]
-                    },
+                    schema=response_schema,
                 )
 
                 # Parse response
@@ -271,31 +314,49 @@ When in doubt, lean towards lower confidence."""
 
                 result = json.loads(result_text)
 
-                if self.verbose:
-                    console.print(
-                        f"[yellow]LLM Response:[/yellow] found={result.get('found')}, "
-                        f"confidence={result.get('confidence', 0):.2f}, "
-                        f"index={result.get('matching_index')}, "
-                        f"chunk=({start}-{start+len(chunk_idx)-1}), "
-                        f"reason={result.get('reason', 'N/A')[:100]}"
-                    )
-
-                confidence = float(result.get('confidence', 0) or 0.0)
-                match_idx_local = result.get('matching_index')
-
-                # Update best candidate even if below threshold
-                if result.get('found') and match_idx_local is not None and 0 <= match_idx_local < len(chunk_idx):
-                    global_idx = chunk_idx[match_idx_local]
-                    if confidence > best_conf:
-                        best_conf = confidence
-                        best_global_idx = global_idx
-                        best_reason = result.get('reason', '')
-
-                # Return early if confident enough
-                if result.get('found', False) and confidence >= self.confidence_threshold:
-                    if match_idx_local is not None and 0 <= match_idx_local < len(chunk_idx):
+                if self.strict_matching:
+                    decision = str(result.get('decision', 'no')).lower()
+                    match_idx_local = result.get('matching_index')
+                    if self.verbose:
+                        console.print(
+                            f"[yellow]LLM Response:[/yellow] decision={decision}, index={result.get('matching_index')}, "
+                            f"chunk=({start}-{start+len(chunk_idx)-1}), reason={result.get('reason', 'N/A')[:100]}"
+                        )
+                    if decision == 'match' and match_idx_local is not None and 0 <= match_idx_local < len(chunk_idx):
                         global_idx = chunk_idx[match_idx_local]
-                        return True, tool_findings[global_idx], result.get('reason', 'No reason provided'), confidence
+                        return True, tool_findings[global_idx], result.get('reason', 'No reason provided'), 1.0, 'match'
+                    elif decision == 'undecided':
+                        if not undecided_reason:
+                            undecided_reason = result.get('reason', 'Undecided')
+                        # continue scanning other chunks
+                        continue
+                    else:
+                        # explicit 'no' -> continue scanning
+                        continue
+                else:
+                    if self.verbose:
+                        console.print(
+                            f"[yellow]LLM Response:[/yellow] found={result.get('found')}, "
+                            f"confidence={result.get('confidence', 0):.2f}, index={result.get('matching_index')}, "
+                            f"chunk=({start}-{start+len(chunk_idx)-1}), reason={result.get('reason', 'N/A')[:100]}"
+                        )
+
+                    confidence = float(result.get('confidence', 0) or 0.0)
+                    match_idx_local = result.get('matching_index')
+
+                    # Update best candidate even if below threshold
+                    if result.get('found') and match_idx_local is not None and 0 <= match_idx_local < len(chunk_idx):
+                        global_idx = chunk_idx[match_idx_local]
+                        if confidence > best_conf:
+                            best_conf = confidence
+                            best_global_idx = global_idx
+                            best_reason = result.get('reason', '')
+
+                    # Return early if confident enough
+                    if result.get('found', False) and confidence >= self.confidence_threshold:
+                        if match_idx_local is not None and 0 <= match_idx_local < len(chunk_idx):
+                            global_idx = chunk_idx[match_idx_local]
+                            return True, tool_findings[global_idx], result.get('reason', 'No reason provided'), confidence, 'match'
 
             except Exception as e:
                 if self.debug:
@@ -304,13 +365,19 @@ When in doubt, lean towards lower confidence."""
                 if not best_reason:
                     best_reason = f"Error: {str(e)}"
 
-        # No chunk produced a match above threshold
-        if best_global_idx is not None and 0 <= best_global_idx < len(tool_findings):
-            return False, None, f"Closest candidate index={best_global_idx} (title='{tool_findings[best_global_idx].get('title','Unknown')[:80]}') with confidence={best_conf:.2f}.", float(max(best_conf, 0.0))
-        # If we encountered errors but no candidate to suggest, surface the error
-        if best_reason:
-            return False, None, best_reason, 0.0
-        return False, None, "Not found", 0.0
+        # No chunk produced a positive match
+        if self.strict_matching:
+            if undecided_reason:
+                return False, None, undecided_reason, 0.0, 'undecided'
+            return False, None, "Not found (strict mode)", 0.0, 'no'
+        else:
+            # No chunk produced a match above threshold
+            if best_global_idx is not None and 0 <= best_global_idx < len(tool_findings):
+                return False, None, f"Closest candidate index={best_global_idx} (title='{tool_findings[best_global_idx].get('title','Unknown')[:80]}') with confidence={best_conf:.2f}.", float(max(best_conf, 0.0)), 'no'
+            # If we encountered errors but no candidate to suggest, surface the error
+            if best_reason:
+                return False, None, best_reason, 0.0, 'no'
+            return False, None, "Not found", 0.0, 'no'
     
     def score_project(self, 
                      expected_findings: List[Dict],
@@ -328,6 +395,7 @@ When in doubt, lean towards lower confidence."""
         
         matched_findings = []
         missed_findings = []
+        undecided_findings = []
         extra_findings = tool_findings.copy()  # Start with all as extra
         matched_tool_indices = set()
         
@@ -346,7 +414,7 @@ When in doubt, lean towards lower confidence."""
                     if self.verbose:
                         console.print(f"\n[cyan]Checking:[/cyan] {expected.get('title', 'Unknown')[:80]}...")
                     
-                    is_match, matched_finding, reason, confidence = self.find_match_in_results(
+                    is_match, matched_finding, reason, confidence, decision = self.find_match_in_results(
                         expected, 
                         [f for _, f in unmatched_findings]
                     )
@@ -388,16 +456,23 @@ When in doubt, lean towards lower confidence."""
                             })
                     else:
                         # No match found
-                        missed_findings.append({
+                        target_list = missed_findings
+                        label = 'Missed'
+                        if self.strict_matching and decision == 'undecided':
+                            target_list = undecided_findings
+                            label = 'Undecided'
+                        # Create the record
+                        undecided_record = {
                             'id': f"{project_name}_expected_{exp_idx:03d}",
                             'title': expected.get('title', 'Unknown'),
                             'description': expected.get('description', ''),
                             'severity': expected.get('severity', 'unknown'),
-                            'reason': reason or 'Not detected by tool'
-                        })
+                            'reason': reason or ('Undecided' if (self.strict_matching and decision == 'undecided') else 'Not detected by tool')
+                        }
+                        target_list.append(undecided_record)
                         
                         if self.debug or self.verbose:
-                            console.print(f"[red]✗ Missed[/red] (confidence={confidence:.2f}): {expected.get('title', 'Unknown')[:60]}")
+                            console.print(f"[red]✗ {label}[/red] (confidence={confidence:.2f}): {expected.get('title', 'Unknown')[:60]}")
                 else:
                     # No unmatched findings left to check
                     missed_findings.append({
@@ -432,7 +507,7 @@ When in doubt, lean towards lower confidence."""
                     
                     # Check if this expected finding matches any unmatched tool finding
                     if unmatched_findings:
-                        is_match, matched_finding, reason, confidence = self.find_match_in_results(
+                        is_match, matched_finding, reason, confidence, decision = self.find_match_in_results(
                             expected, 
                             [f for _, f in unmatched_findings]
                         )
@@ -474,16 +549,18 @@ When in doubt, lean towards lower confidence."""
                                 })
                         else:
                             # No match found
-                            missed_findings.append({
+                            target_list = missed_findings if not (self.strict_matching and decision == 'undecided') else undecided_findings
+                            target_list.append({
                                 'id': f"{project_name}_expected_{exp_idx:03d}",
                                 'title': expected.get('title', 'Unknown'),
                                 'description': expected.get('description', ''),
                                 'severity': expected.get('severity', 'unknown'),
-                                'reason': reason or 'Not detected by tool'
+                                'reason': reason or ('Undecided' if (self.strict_matching and decision == 'undecided') else 'Not detected by tool')
                             })
                             
                             if self.debug:
-                                console.print(f"[red]✗ Missed[/red] (confidence={confidence:.2f}): {expected.get('title', 'Unknown')[:60]}")
+                                tag = 'Undecided' if (self.strict_matching and decision == 'undecided') else 'Missed'
+                                console.print(f"[red]✗ {tag}[/red] (confidence={confidence:.2f}): {expected.get('title', 'Unknown')[:60]}")
                     else:
                         # No unmatched findings left to check
                         missed_findings.append({
@@ -508,9 +585,9 @@ When in doubt, lean towards lower confidence."""
                     'original_id': found.get('id', '')
                 })
         
-        # Calculate metrics
+        # Calculate metrics (undecided are treated as not matched for metrics)
         true_positives = len(matched_findings)
-        false_negatives = len(missed_findings)
+        false_negatives = len(missed_findings) + len(undecided_findings)
         false_positives = len(extra_findings)
         
         detection_rate = (true_positives / len(expected_findings)) if expected_findings else 0.0
@@ -524,6 +601,8 @@ When in doubt, lean towards lower confidence."""
         
         table.add_row("True Positives", str(true_positives))
         table.add_row("False Negatives", str(false_negatives))
+        if self.strict_matching and undecided_findings:
+            table.add_row("Undecided (info)", str(len(undecided_findings)))
         table.add_row("False Positives", str(false_positives))
         table.add_row("Detection Rate", f"{detection_rate*100:.1f}%")
         table.add_row("Precision", f"{precision*100:.1f}%")
@@ -544,6 +623,7 @@ When in doubt, lean towards lower confidence."""
             f1_score=f1_score,
             matched_findings=matched_findings,
             missed_findings=missed_findings,
+            undecided_findings=undecided_findings,
             extra_findings=extra_findings,
             potential_matches=[]  # Not used in V2
         )
@@ -564,6 +644,7 @@ def main():
     parser.add_argument('--desc-max-chars', type=int, default=800, help='Max characters per description (default: 800)')
     parser.add_argument('--prefilter-limit', type=int, default=0, help='If >0, limit to top-N similar candidates before chunking')
     parser.add_argument('--no-prefilter', action='store_true', help='Disable lexical/hint prefiltering')
+    parser.add_argument('--strict-matching', action='store_true', help='Enable strict matching (no confidence; undecided when in doubt)')
     
     args = parser.parse_args()
 
@@ -588,11 +669,12 @@ def main():
         'desc_max_chars': args.desc_max_chars,
         'prefilter_limit': args.prefilter_limit,
         'prefilter': not args.no_prefilter,
+        'strict_matching': args.strict_matching,
     }
     scorer = ScaBenchScorerV2(config)
     
     if args.verbose:
-        console.print(f"[cyan]Using confidence threshold: {args.confidence_threshold} | chunk-size={args.chunk_size} | prefilter={'on' if not args.no_prefilter else 'off'}[/cyan]")
+        console.print(f"[cyan]Using confidence threshold: {args.confidence_threshold} | chunk-size={args.chunk_size} | prefilter={'on' if not args.no_prefilter else 'off'} | strict={'on' if args.strict_matching else 'off'}[/cyan]")
     
     # Find results files
     results_dir = Path(args.results_dir)

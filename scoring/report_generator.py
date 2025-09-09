@@ -38,6 +38,7 @@ class ReportGenerator:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the report generator."""
         self.config = config or {}
+        self.suppress_fp = self.config.get('suppress_fp', False)
         self.scan_info = {
             'tool_name': self.config.get('tool_name', 'Baseline Analyzer'),
             'tool_version': self.config.get('tool_version', 'v1.0'),
@@ -58,13 +59,8 @@ class ReportGenerator:
         circumference = 2 * 3.14159 * radius
         offset = circumference - (detection_rate / 100 * circumference)
         
-        # Determine color based on detection rate
-        if detection_rate >= 70:
-            stroke_color = '#10b981'  # Green
-        elif detection_rate >= 40:
-            stroke_color = '#f59e0b'  # Orange
-        else:
-            stroke_color = '#ef4444'  # Red
+        # Use neutral blue color for detection rate
+        stroke_color = '#3b82f6'  # Blue (neutral)
         
         charts['detection_pie'] = f"""
         <svg viewBox="0 0 36 36" class="circular-chart">
@@ -231,13 +227,18 @@ class ReportGenerator:
         total_found = sum(s['total_found'] for s in all_scores)
         total_tp = sum(s['true_positives'] for s in all_scores)
         total_fn = sum(s['false_negatives'] for s in all_scores)
-        total_fp = sum(s['false_positives'] for s in all_scores)
+        total_fp = 0 if self.suppress_fp else sum(s['false_positives'] for s in all_scores)
         total_potential = sum(len(s.get('potential_matches', [])) for s in all_scores)
         
         overall_detection = (total_tp / total_expected * 100) if total_expected > 0 else 0
-        overall_precision = (total_tp / (total_tp + total_fp) * 100) if (total_tp + total_fp) > 0 else 0
-        overall_f1 = (2 * overall_precision * overall_detection / 
-                     (overall_precision + overall_detection)) if (overall_precision + overall_detection) > 0 else 0
+        # When suppressing FPs, we don't calculate precision or F1 score in the traditional way
+        if self.suppress_fp:
+            overall_precision = 100.0 if total_tp > 0 else 0  # All shown findings are true positives
+            overall_f1 = overall_detection  # F1 simplifies to just detection rate when no FPs
+        else:
+            overall_precision = (total_tp / (total_tp + total_fp) * 100) if (total_tp + total_fp) > 0 else 0
+            overall_f1 = (2 * overall_precision * overall_detection / 
+                         (overall_precision + overall_detection)) if (overall_precision + overall_detection) > 0 else 0
         
         # Severity statistics
         severity_stats = defaultdict(lambda: {'expected': 0, 'found': 0})
@@ -1241,13 +1242,13 @@ class ReportGenerator:
                 <div class="metric-label">False Negatives</div>
                 <div class="metric-trend">Missed vulnerabilities</div>
             </div>''',
-            f'''<div class="metric-card danger">
+            '' if self.suppress_fp else f'''<div class="metric-card danger">
                 <div class="metric-icon">❌</div>
                 <div class="metric-value">{stats["total_fp"]}</div>
                 <div class="metric-label">False Positives</div>
                 <div class="metric-trend">Incorrect detections</div>
             </div>''',
-            f'''<div class="metric-card">
+            '' if self.suppress_fp else f'''<div class="metric-card">
                 <div class="metric-icon">📈</div>
                 <div class="metric-value">{stats["overall_f1"]:.1f}%</div>
                 <div class="metric-label">F1 Score</div>
@@ -1318,9 +1319,9 @@ class ReportGenerator:
                             <button class="tab" onclick="switchTab('{project_id}', 'missed')">
                                 Missed<span class="tab-badge">{score['false_negatives']}</span>
                             </button>
-                            <button class="tab" onclick="switchTab('{project_id}', 'extra')">
+                            {'' if self.suppress_fp else f'''<button class="tab" onclick="switchTab('{project_id}', 'extra')">
                                 Extra<span class="tab-badge">{score['false_positives']}</span>
-                            </button>
+                            </button>'''}
                             <button class="tab" onclick="switchTab('{project_id}', 'potential')">
                                 Potential<span class="tab-badge">{len(score.get('potential_matches', []))}</span>
                             </button>
@@ -1435,49 +1436,50 @@ class ReportGenerator:
                 html_parts.append('<p style="color: #6b7280; text-align: center; padding: 2rem;">No missed vulnerabilities</p>')
             html_parts.append('</div>')
             
-            # Extra findings tab
-            html_parts.append('<div class="tab-content" data-tab="extra">')
-            if score['extra_findings']:
-                for idx, extra in enumerate(score['extra_findings']):
-                    severity = extra.get('severity', 'unknown').lower()
-                    finding_id = extra.get('id', f'{project_id}_extra_{idx}')
-                    
-                    # Escape description for HTML
-                    import html as html_lib
-                    description = html_lib.escape(extra.get('description', 'No description available'))
-                    
-                    html_parts.append(f'''
-                    <div class="finding-card">
-                        <div class="finding-header">
-                            <div class="finding-title">{extra.get('title', 'Unknown')}</div>
-                            <span class="severity-badge severity-{severity}">{severity}</span>
-                        </div>
-                        <span class="details-toggle" onclick="toggleDetails('{finding_id}_extra')">
-                            View Full Description
-                        </span>
-                        <div id="{finding_id}_extra" class="details-content">
-                            <div class="detail-section">
-                                <h4>Tool Finding Description</h4>
-                                <div class="content">
-                                    <strong>Title:</strong> {extra.get('title', 'Unknown')}<br><br>
-                                    <strong>Description:</strong><br>
-                                    {description}
+            # Extra findings tab (only if not suppressing FPs)
+            if not self.suppress_fp:
+                html_parts.append('<div class="tab-content" data-tab="extra">')
+                if score['extra_findings']:
+                    for idx, extra in enumerate(score['extra_findings']):
+                        severity = extra.get('severity', 'unknown').lower()
+                        finding_id = extra.get('id', f'{project_id}_extra_{idx}')
+                        
+                        # Escape description for HTML
+                        import html as html_lib
+                        description = html_lib.escape(extra.get('description', 'No description available'))
+                        
+                        html_parts.append(f'''
+                        <div class="finding-card">
+                            <div class="finding-header">
+                                <div class="finding-title">{extra.get('title', 'Unknown')}</div>
+                                <span class="severity-badge severity-{severity}">{severity}</span>
+                            </div>
+                            <span class="details-toggle" onclick="toggleDetails('{finding_id}_extra')">
+                                View Full Description
+                            </span>
+                            <div id="{finding_id}_extra" class="details-content">
+                                <div class="detail-section">
+                                    <h4>Tool Finding Description</h4>
+                                    <div class="content">
+                                        <strong>Title:</strong> {extra.get('title', 'Unknown')}<br><br>
+                                        <strong>Description:</strong><br>
+                                        {description}
+                                    </div>
+                                </div>
+                                <div class="detail-section">
+                                    <h4>Detection Details</h4>
+                                    <div class="content">
+                                        <strong>Finding ID:</strong> {finding_id}<br>
+                                        <strong>Original ID:</strong> {extra.get('original_id', 'N/A')}<br>
+                                        <strong>Status:</strong> False Positive (not in expected findings)
+                                    </div>
                                 </div>
                             </div>
-                            <div class="detail-section">
-                                <h4>Detection Details</h4>
-                                <div class="content">
-                                    <strong>Finding ID:</strong> {finding_id}<br>
-                                    <strong>Original ID:</strong> {extra.get('original_id', 'N/A')}<br>
-                                    <strong>Status:</strong> False Positive (not in expected findings)
-                                </div>
-                            </div>
                         </div>
-                    </div>
-                    ''')
-            else:
-                html_parts.append('<p style="color: #6b7280; text-align: center; padding: 2rem;">No extra findings</p>')
-            html_parts.append('</div>')
+                        ''')
+                else:
+                    html_parts.append('<p style="color: #6b7280; text-align: center; padding: 2rem;">No extra findings</p>')
+                html_parts.append('</div>')
             
             # Potential matches tab
             html_parts.append('<div class="tab-content" data-tab="potential">')
@@ -1516,12 +1518,8 @@ class ReportGenerator:
     
     def _get_rate_color(self, rate: float) -> str:
         """Get color based on detection rate."""
-        if rate >= 70:
-            return 'var(--success)'
-        elif rate >= 40:
-            return 'var(--warning)'
-        else:
-            return 'var(--danger)'
+        # Use neutral blue color for all detection rates
+        return 'var(--primary)'  # Blue (neutral)
 
 
 def main():
@@ -1531,12 +1529,14 @@ def main():
     parser.add_argument('--tool-name', default='Security Analyzer', help='Name of the tool')
     parser.add_argument('--model', default='Not specified', help='Model used for analysis')
     parser.add_argument('--benchmark', help='Optional benchmark dataset file')
+    parser.add_argument('--suppress-fp', action='store_true', help='Suppress false positives in the report')
     
     args = parser.parse_args()
     
     config = {
         'tool_name': args.tool_name,
         'model': args.model,
+        'suppress_fp': args.suppress_fp,
     }
     
     generator = ReportGenerator(config)

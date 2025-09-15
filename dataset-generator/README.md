@@ -1,9 +1,10 @@
 # ScaBench Dataset Generator
 
-A comprehensive system for generating and curating security audit datasets from multiple platforms. This toolkit consists of two main components:
+A comprehensive system for generating and curating security audit datasets from multiple platforms. This toolkit consists of three components:
 
 1. **Scraper**: Extracts security audit data from platforms like Code4rena, Cantina, and Sherlock
 2. **Curator**: Filters and enriches the scraped data based on configurable quality criteria
+3. **Source Checkout**: Clones project repositories at exact audit commits for downstream analysis
 
 The system extracts vulnerability findings, GitHub repository information, and project metadata to create structured datasets for security research.
 
@@ -23,6 +24,7 @@ The typical workflow for generating a curated dataset:
 
 1. **Scrape**: Use `scraper.py` to collect audit data from various platforms
 2. **Curate**: Use `curate_dataset.py` to filter and enrich the scraped data
+3. **Checkout Sources**: Use `checkout_sources.py` to clone repos at exact commits
 
 ```bash
 # Step 1: Scrape data from platforms (last 6 months)
@@ -34,6 +36,11 @@ python curate_dataset.py -i raw_dataset.json -o curated_dataset.json
 # With custom criteria
 python curate_dataset.py -i raw_dataset.json -o curated_dataset.json \
     --min-vulnerabilities 10 --min-high-critical 2
+
+# Step 3: Checkout sources for analysis (from this directory)
+python checkout_sources.py \
+  --dataset ../datasets/curated-2025-08-18/curated-2025-08-18.json \
+  --output ../sources
 ```
 
 ## Component 1: Scraper
@@ -92,7 +99,56 @@ The curator produces:
   - Severity breakdown
   - Platform statistics
 
-## Component 3: Scraper Details
+## Component 3: Source Checkout (`checkout_sources.py`)
+
+Clone and checkout project repositories at the exact commits declared in a curated dataset. This prepares local sources for analysis with the baseline runner or other tools.
+
+### Usage
+
+```bash
+# Checkout ALL projects (run from dataset-generator/)
+python checkout_sources.py \
+  --dataset ../datasets/curated-2025-08-18/curated-2025-08-18.json \
+  --output ../sources
+
+# Checkout a single project by id or substring
+python checkout_sources.py \
+  --dataset ../datasets/curated-2025-08-18/curated-2025-08-18.json \
+  --project code4rena_kinetiq_2025_07 \
+  --output ../sources
+
+# Skip re-cloning when already at the correct commit
+python checkout_sources.py \
+  --dataset ../datasets/curated-2025-08-18/curated-2025-08-18.json \
+  --output ../sources \
+  --skip-existing
+```
+
+### Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--dataset, -d` | Path to curated dataset JSON | `../datasets/curated-2025-08-18/curated-2025-08-18.json` |
+| `--output, -o` | Target directory for clones | `sources/` |
+| `--project, -p` | Filter by project id or name substring | None |
+| `--skip-existing` | Do not re-clone if correct commit is present | False |
+
+### Output Layout
+
+```
+../sources/
+  code4rena_kinetiq_2025_07/            # Single codebase
+  cantina_projectX_2025_04_repoA/       # Multi-codebase project gets suffixed
+  cantina_projectX_2025_04_repoB/
+```
+
+### Notes
+
+- Working directory: examples assume you run from `benchmarks/scabench/dataset-generator/`.
+- Only GitHub repositories are cloned; non‑GitHub entries are skipped.
+- Shallow clone is attempted first; falls back to fetching history if needed to reach the commit.
+
+## Component 4: Scraper Details
 
 ### Command Line
 

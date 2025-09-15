@@ -10,9 +10,9 @@ A comprehensive framework for evaluating security analysis tools and AI agents o
 
 - 🎯 **Curated Datasets**: Real-world vulnerabilities from Code4rena, Cantina, and Sherlock audits
 - 🤖 **Baseline Runner**: LLM-based security analyzer with configurable models
-- 📊 **Scoring Tool**: Evaluates findings with LLM-based matching (confidence = 1.0 only)
+- 📊 **Scoring Tool**: Official Nethermind AuditAgent scoring algorithm
 - 📈 **Report Generator**: HTML reports with visualizations and performance metrics
-- 🔄 **Pipeline Automation**: Complete workflow with single-command execution
+- 🔄 **Composable CLI**: End-to-end examples for single or all projects
 
 ## Available Curated Datasets
 
@@ -100,86 +100,68 @@ python baseline-runner/baseline_runner.py \
   --source sources/my_project
 ```
 
-### 📈 **Scorer** (`scoring/scorer_v2.py`)
-Evaluates ANY tool's findings against the benchmark using LLM matching with one-by-one comparison for better consistency.
+### 📈 **Scorer** (Nethermind AuditAgent algorithm)
+Official scoring now uses Nethermind's AuditAgent algorithm. The previous `scoring/scorer_v2.py` is deprecated.
 
-**Important: Model Requirements**
-- The scorer uses one-by-one matching - processes each expected finding sequentially
-- More deterministic than batch matching with fixed seed and zero temperature
-- **Recommended**: `gpt-4o` (default, best accuracy)
-- **Alternative**: `gpt-4o-mini` (faster, cheaper, good for testing)
+- Upstream repo: https://github.com/NethermindEth/auditagent-scoring-algo
 
-#### Scoring a Single Project
-
-**IMPORTANT**: When scoring a single project, you must specify the exact project ID from the benchmark dataset using the `--project` flag. Project IDs often contain hyphens (e.g., `code4rena_iq-ai_2025_03`) while baseline result filenames may have underscores.
-
+Install the scorer (either clone and install, or install directly from Git):
 ```bash
-# Example: Score results for a single project
-python scoring/scorer_v2.py \
-  --benchmark datasets/curated-2025-08-18/curated-2025-08-18.json \
-  --results-dir datasets/curated-2025-08-18/baseline-results/ \
-  --project code4rena_iq-ai_2025_03 \
-  --model gpt-4o \
-  --confidence-threshold 0.75
-
-# With verbose output to see matching details
-python scoring/scorer_v2.py \
-  --benchmark datasets/curated-2025-08-18/curated-2025-08-18.json \
-  --results-dir datasets/curated-2025-08-18/baseline-results/ \
-  --project code4rena_iq-ai_2025_03 \
-  --verbose
+pip install "git+https://github.com/NethermindEth/auditagent-scoring-algo"
+# or
+git clone https://github.com/NethermindEth/auditagent-scoring-algo.git
+cd auditagent-scoring-algo && pip install -e .
 ```
 
-Note: The `--project` parameter must match the exact `project_id` field from the benchmark dataset JSON. Check the dataset file if unsure about the correct project ID.
+Scorer data layout (you create this):
+- `<DATA_ROOT>/<SCAN_SOURCE>/<project>_results.json`   # your tool’s findings (e.g., `SCAN_SOURCE=baseline`)
+- `<DATA_ROOT>/source_of_truth/<project>.json`         # per-project ground truth
 
-#### Scoring an Entire Baseline Run (All Projects)
-
-To score all baseline results at once:
-
+Prepare truth files from the curated dataset:
 ```bash
-# Score all baseline results in a directory
-python scoring/scorer_v2.py \
-  --benchmark datasets/curated-2025-08-18/curated-2025-08-18.json \
-  --results-dir datasets/curated-2025-08-18/baseline-results/ \
-  --output scores/ \
-  --model gpt-4o \
-  --confidence-threshold 0.75
-
-# This will:
-# 1. Process all *.json files in the results directory
-# 2. Automatically extract and match project IDs
-# 3. Generate individual score files for each project
-# 4. Save results to the scores/ directory
-
-# With debug output
-python scoring/scorer_v2.py \
-  --benchmark datasets/curated-2025-08-18/curated-2025-08-18.json \
-  --results-dir datasets/curated-2025-08-18/baseline-results/ \
-  --output scores/ \
-  --debug
+export DATA_ROOT="$(pwd)/scoring_data"
+mkdir -p "$DATA_ROOT/source_of_truth"
+python - <<'PY'
+import json, os, pathlib
+dataset = json.load(open('datasets/curated-2025-08-18/curated-2025-08-18.json'))
+out = pathlib.Path(os.environ.get('DATA_ROOT','./scoring_data'))/ 'source_of_truth'
+out.mkdir(parents=True, exist_ok=True)
+for item in dataset:
+    (out/f"{item['project_id']}.json").write_text(json.dumps(item, indent=2))
+print(f"Wrote {len(dataset)} truth files to {out}")
+PY
 ```
 
-#### Available Options
-- `--confidence-threshold`: Set matching confidence threshold (default: 0.75)
-- `--verbose`: Show detailed matching progress for each finding
-- `--debug`: Enable debug output for troubleshooting
-
-After scoring, generate a comprehensive report:
+Place your findings for each project (from your analyzer or the baseline runner) as:
 ```bash
-python scoring/report_generator.py \
-  --scores scores/ \
-  --output baseline_report.html \
-  --tool-name "Baseline" \
-  --model gpt-5-mini
+mkdir -p "$DATA_ROOT/baseline"
+# Example: after running baseline-runner (below), move/rename to the expected name
+PROJECT_ID=code4rena_kinetiq_2025_07
+mv baseline_results/baseline_${PROJECT_ID}.json "$DATA_ROOT/baseline/${PROJECT_ID}_results.json"
 ```
 
-### 📄 **Report Generator** (`scoring/report_generator.py`)
-Creates HTML reports with metrics and visualizations.
+Run the scorer:
 ```bash
-python scoring/report_generator.py \
-  --scores scores/ \
-  --output report.html
+export OPENAI_API_KEY=...   # required
+export MODEL=o4-mini        # or another supported OpenAI model
+export REPOS_TO_RUN='["code4rena_kinetiq_2025_07"]'   # list of project IDs
+export DATA_ROOT="$DATA_ROOT"
+export OUTPUT_ROOT="$(pwd)/scoring_output"
+export SCAN_SOURCE=baseline  # or auditagent
+python -m scoring_algo.cli evaluate --no-telemetry --log-level INFO
+
+# Generate Markdown report from results
+python -m scoring_algo.generate_report \
+  --benchmarks "$OUTPUT_ROOT" \
+  --scan-root "$DATA_ROOT/$SCAN_SOURCE" \
+  --out REPORT.md
 ```
+
+### 📄 **Report Generation**
+- Via AuditAgent algo (preferred):
+  - Markdown summary: `python -m scoring_algo.generate_report --benchmarks <OUTPUT_ROOT> --scan-root <DATA_ROOT>/<SCAN_SOURCE> --out REPORT.md`
+- Legacy HTML generator (works with legacy `scorer_v2.py` JSON):
+  - `python scoring/report_generator.py --scores <scores_dir> --output report.html`
 
 ## Quick Start
 
@@ -192,93 +174,7 @@ pip install -r requirements.txt
 export OPENAI_API_KEY="your-key-here"
 ```
 
-### Option 1: Process ALL Projects (Easiest!) 🚀
-
-The `run_all.sh` script provides a complete end-to-end pipeline that:
-
-1. **Downloads source code** - Clones all project repositories at exact audit commits
-2. **Runs baseline analysis** - Analyzes each project with LLM-based security scanner
-3. **Scores results** - Evaluates findings against known vulnerabilities using strict matching
-4. **Generates reports** - Creates comprehensive HTML report with metrics and visualizations
-
-#### Basic Usage
-```bash
-# Run everything with defaults (all projects in dataset, gpt-5-mini model)
-./run_all.sh
-
-# Use different model (e.g., gpt-4o-mini for faster/cheaper runs)
-./run_all.sh --model gpt-4o-mini
-
-# Use a different dataset
-./run_all.sh --dataset datasets/my_custom_dataset.json
-
-# Combine options
-./run_all.sh --model gpt-4o-mini --output-dir test_run
-```
-
-#### All Options
-```bash
-./run_all.sh [OPTIONS]
-
-Options:
-  --dataset FILE       Dataset to use (default: datasets/curated-2025-08-18.json)
-  --model MODEL        Model for analysis (default: gpt-5-mini)
-                       Options: gpt-5-mini, gpt-4o-mini, gpt-4o
-  --output-dir DIR     Output directory (default: all_results_TIMESTAMP)
-  --skip-checkout      Skip source checkout (use existing sources)
-  --skip-baseline      Skip baseline analysis (use existing results)
-  --skip-scoring       Skip scoring and report generation
-  --help               Show help
-```
-
-#### What It Does (Step by Step)
-
-**Step 1: Source Checkout**
-- Downloads all projects from the dataset (from their GitHub repositories)
-- Checks out exact commits from audit time
-- Preserves original project structure
-- Creates: `OUTPUT_DIR/sources/PROJECT_ID/`
-
-**Step 2: Baseline Analysis**
-- Runs LLM-based security analysis on each project
-- Configurable file limits for testing
-- Uses specified model (default: gpt-5-mini)
-- Creates: `OUTPUT_DIR/baseline_results/baseline_PROJECT_ID.json`
-
-**Step 3: Scoring**
-- Compares findings against known vulnerabilities in the dataset
-- Uses STRICT matching (confidence = 1.0 only)
-- Batch processes all projects
-- Creates: `OUTPUT_DIR/scoring_results/score_PROJECT_ID.json`
-
-**Step 4: Report Generation**
-- Aggregates all scoring results
-- Generates HTML report with charts and metrics
-- Calculates overall detection rates and F1 scores
-- Creates: `OUTPUT_DIR/reports/full_report.html`
-
-**Step 5: Summary Statistics**
-- Computes aggregate metrics across all projects
-- Saves summary JSON with key statistics
-- Creates: `OUTPUT_DIR/summary.json`
-
-#### Performance Notes
-
-- **Full run (all files)**: 4-6 hours for default dataset (31 projects)
-- **Fast test (--model gpt-4o-mini)**: 30-45 minutes
-- **Model selection**:
-  - `gpt-5-mini`: Best accuracy (default)
-  - `gpt-4o-mini`: Faster, cheaper, good for testing
-
-**Note**: The default dataset (`curated-2025-08-18.json`) contains 31 projects with 555 total vulnerabilities. Custom datasets may have different counts.
-
-### Option 2: Process Single Project
-```bash
-# For a specific project
-./run_pipeline.sh --project vulnerable_vault --source sources/vulnerable_vault
-```
-
-### Option 3: Complete Command-Line Guides
+### Quick Start: CLI Guides
 
 #### Complete Guide: Analyze and Score a Single Project
 
@@ -302,24 +198,33 @@ python baseline-runner/baseline_runner.py \
   --output datasets/curated-2025-08-18/baseline-results/ \
   --model gpt-5-mini
 
-# Step 5: Score the results (IMPORTANT: use exact project ID with hyphens)
-python scoring/scorer_v2.py \
-  --benchmark datasets/curated-2025-08-18/curated-2025-08-18.json \
-  --results-dir datasets/curated-2025-08-18/baseline-results/ \
-  --project $PROJECT_ID \
-  --output scores/ \
-  --model gpt-4o
+# Step 5: Score the results using AuditAgent algorithm
+pip install "git+https://github.com/NethermindEth/auditagent-scoring-algo"
+export DATA_ROOT="$(pwd)/scoring_data" && mkdir -p "$DATA_ROOT/baseline" "$DATA_ROOT/source_of_truth"
+# Create truth files from curated dataset (one per project)
+python - <<'PY'
+import json, os, pathlib
+dataset = json.load(open('datasets/curated-2025-08-18/curated-2025-08-18.json'))
+out = pathlib.Path(os.environ['DATA_ROOT'])/ 'source_of_truth'
+out.mkdir(parents=True, exist_ok=True)
+for item in dataset:
+    (out/f"{item['project_id']}.json").write_text(json.dumps(item, indent=2))
+PY
+# Place/rename baseline output for this project
+mv datasets/curated-2025-08-18/baseline-results/baseline_${PROJECT_ID}.json "$DATA_ROOT/baseline/${PROJECT_ID}_results.json"
+# Run scoring
+export OPENAI_API_KEY=...; export MODEL=o4-mini; export REPOS_TO_RUN='["'"$PROJECT_ID"'"]'; export OUTPUT_ROOT="$(pwd)/scoring_output"; export SCAN_SOURCE=baseline
+python -m scoring_algo.cli evaluate --no-telemetry --log-level INFO
 
-# Step 6: Generate HTML report
-python scoring/report_generator.py \
-  --scores scores/ \
-  --output single_project_report.html \
-  --tool-name "Baseline" \
-  --model gpt-5-mini
+# Step 6: Generate Markdown report from evaluated results
+python -m scoring_algo.generate_report \
+  --benchmarks "$OUTPUT_ROOT" \
+  --scan-root "$DATA_ROOT/$SCAN_SOURCE" \
+  --out REPORT.md
 
 # Step 7: View the report
-open single_project_report.html  # macOS
-# xdg-open single_project_report.html  # Linux
+open REPORT.md  # macOS
+# xdg-open REPORT.md  # Linux
 ```
 
 #### Complete Guide: Analyze and Score ALL Projects
@@ -344,23 +249,38 @@ for dir in sources/*/; do
     --model gpt-5-mini \
 done
 
-# Step 4: Score ALL baseline results
-python scoring/scorer_v2.py \
-  --benchmark datasets/curated-2025-08-18/curated-2025-08-18.json \
-  --results-dir datasets/curated-2025-08-18/baseline-results/ \
-  --output scores/ \
-  --model gpt-4o
+# Step 4: Score ALL prepared results using AuditAgent algorithm
+pip install "git+https://github.com/NethermindEth/auditagent-scoring-algo"
+export DATA_ROOT="$(pwd)/scoring_data" && mkdir -p "$DATA_ROOT/baseline" "$DATA_ROOT/source_of_truth" "$OUTPUT_ROOT"
+# (Optionally) split truth for all projects
+python - <<'PY'
+import json, os, pathlib
+dataset = json.load(open('datasets/curated-2025-08-18/curated-2025-08-18.json'))
+root = pathlib.Path(os.environ['DATA_ROOT'])
+truth = root/ 'source_of_truth'; truth.mkdir(parents=True, exist_ok=True)
+for item in dataset:
+    (truth/f"{item['project_id']}.json").write_text(json.dumps(item, indent=2))
+print(f"Wrote {len(dataset)} truth files to {truth}")
+PY
+# Move/rename all baseline outputs into $DATA_ROOT/baseline as <project>_results.json
+for f in datasets/curated-2025-08-18/baseline-results/baseline_*.json; do 
+  p=$(basename "$f" .json | sed 's/^baseline_//'); 
+  mv "$f" "$DATA_ROOT/baseline/${p}_results.json"; 
+done
+# List of projects to score (JSON array of project IDs)
+export REPOS_TO_RUN=$(jq -r '.[].project_id' datasets/curated-2025-08-18/curated-2025-08-18.json | jq -R -s -c 'split("\n")[:-1]')
+export OPENAI_API_KEY=...; export MODEL=o4-mini; export OUTPUT_ROOT="$(pwd)/scoring_output"; export SCAN_SOURCE=baseline
+python -m scoring_algo.cli evaluate --no-telemetry --log-level INFO
 
-# Step 5: Generate comprehensive report
-python scoring/report_generator.py \
-  --scores scores/ \
-  --output full_baseline_report.html \
-  --tool-name "Baseline Analysis" \
-  --model gpt-5-mini
+# Step 5: Generate a Markdown summary report
+python -m scoring_algo.generate_report \
+  --benchmarks "$OUTPUT_ROOT" \
+  --scan-root "$DATA_ROOT/$SCAN_SOURCE" \
+  --out REPORT.md
 
 # Step 6: View the report
-open full_baseline_report.html  # macOS
-# xdg-open full_baseline_report.html  # Linux
+open REPORT.md  # macOS (opens in default editor)
+# xdg-open REPORT.md  # Linux
 ```
 
 #### Quick Test Run (Small Sample)
@@ -378,58 +298,26 @@ python baseline-runner/baseline_runner.py \
   --project $PROJECT_ID \
   --source sources/${PROJECT_ID//-/_} \
   --model gpt-5-mini
-python scoring/scorer_v2.py \
-  --benchmark datasets/curated-2025-08-18/curated-2025-08-18.json \
-  --results-dir datasets/curated-2025-08-18/baseline-results/ \
-  --project $PROJECT_ID \
-  --model gpt-4o
-python scoring/report_generator.py \
-  --scores scores/ \
-  --output test_report.html \
-  --model gpt-5-mini
-open test_report.html
+# Score with AuditAgent algorithm
+pip install "git+https://github.com/NethermindEth/auditagent-scoring-algo"
+export DATA_ROOT="$(pwd)/scoring_data" && mkdir -p "$DATA_ROOT/baseline" "$DATA_ROOT/source_of_truth"
+mv baseline_results/baseline_${PROJECT_ID}.json "$DATA_ROOT/baseline/${PROJECT_ID}_results.json"
+python - <<'PY'
+import json, os, pathlib
+dataset = json.load(open('datasets/curated-2025-08-18/curated-2025-08-18.json'))
+proj = os.environ['PROJECT_ID']
+item = next((x for x in dataset if x.get('project_id') == proj), None)
+out = pathlib.Path(os.environ['DATA_ROOT'])/'source_of_truth'/f"{proj}.json"
+out.parent.mkdir(parents=True, exist_ok=True)
+out.write_text(json.dumps(item, indent=2))
+print('Wrote truth to', out)
+PY
+export OPENAI_API_KEY=...; export MODEL=o4-mini; export REPOS_TO_RUN='["'"$PROJECT_ID"'"]'; export OUTPUT_ROOT="$(pwd)/scoring_output"; export SCAN_SOURCE=baseline
+python -m scoring_algo.cli evaluate --no-telemetry --log-level INFO
+python -m scoring_algo.generate_report --benchmarks "$OUTPUT_ROOT" --scan-root "$DATA_ROOT/$SCAN_SOURCE" --out REPORT.md
 ```
 
-### Option 4: Step-by-Step Manual Process
-
-## Two Ways to Use ScaBench
-
-### 🎯 Option A: Run the Official Baseline
-
-**Easiest - Process ALL projects with one command:**
-```bash
-./run_all.sh
-```
-
-This automatically:
-1. Downloads all source code at exact commits
-2. Runs baseline security analysis
-3. Scores against benchmark
-4. Generates comprehensive reports
-
-**Manual approach for specific projects:**
-```bash
-# 1. Download source code
-python dataset-generator/checkout_sources.py --project vulnerable_vault
-
-# 2. Run baseline analysis
-python baseline-runner/baseline_runner.py \
-  --project vulnerable_vault \
-  --source sources/vulnerable_vault
-
-# 3. Score results
-python scoring/scorer_v2.py \
-  --benchmark datasets/curated-2025-08-18/curated-2025-08-18.json \
-  --results-dir datasets/curated-2025-08-18/baseline-results/ \
-  --project vulnerable_vault
-
-# 4. Generate report
-python scoring/report_generator.py \
-  --scores scores/ \
-  --output report.html
-```
-
-### 🚀 Option B: Evaluate YOUR Tool
+## Evaluate YOUR Tool
 
 **Step 1: Get the source code**
 ```bash
@@ -459,18 +347,30 @@ your-tool analyze sources/project1/ > results/project1.json
 ```
 [See format specification below](#output-formats)
 
-**Step 4: Score your results**
+**Step 4: Score your results (AuditAgent algorithm)**
+Two options:
+
+Run the scorer after placing files per layout:
 ```bash
-python scoring/scorer_v2.py \
-  --benchmark datasets/curated-2025-08-18/curated-2025-08-18.json \
-  --results-dir results/
+# Prepare data layout manually
+# <DATA_ROOT>/baseline/<project>_results.json
+# <DATA_ROOT>/source_of_truth/<project>.json  # per-project truth JSON
+
+export OPENAI_API_KEY=...
+export MODEL=o4-mini
+export REPOS_TO_RUN='["<project>"]'
+export DATA_ROOT="/path/to/DATA_ROOT"
+export OUTPUT_ROOT="/path/to/benchmarks"
+export SCAN_SOURCE=baseline
+python -m scoring_algo.cli evaluate --no-telemetry --log-level INFO
 ```
 
 **Step 5: View your performance**
 ```bash
-python scoring/report_generator.py \
-  --scores scores/ \
-  --output my_tool_report.html
+python -m scoring_algo.generate_report \
+  --benchmarks "$OUTPUT_ROOT" \
+  --scan-root "$DATA_ROOT/$SCAN_SOURCE" \
+  --out REPORT.md
 ```
 
 ## Installation
@@ -493,39 +393,37 @@ pip install -r requirements.txt
 pytest tests/
 ```
 
-## Strict Matching Policy
+## Matching Policy (AuditAgent algorithm)
 
-The scorer enforces EXTREMELY STRICT matching criteria:
+The scorer follows AuditAgent's matching rules:
 
-- ✅ **IDENTICAL LOCATION** - Must be exact same file/contract/function
-- ✅ **EXACT IDENTIFIERS** - Same contract names, function names, variables  
-- ✅ **IDENTICAL ROOT CAUSE** - Must be THE SAME vulnerability
-- ✅ **IDENTICAL ATTACK VECTOR** - Exact same exploitation method
-- ✅ **IDENTICAL IMPACT** - Exact same security consequence
-- ❌ **NO MATCH** for similar patterns in different locations
-- ❌ **NO MATCH** for same bug type but different functions
-- ⚠️ **WHEN IN DOUBT: DO NOT MATCH**
-
-**Only findings with confidence = 1.0 count as true positives!**
+- ✅ **One-to-one mapping**: At most one junior finding per truth finding
+- ✅ **Exact matches**: Count as true positives; short‑circuit further search for that truth
+- ➖ **Partial matches**: Tracked separately; de‑duplicated by junior index; do not count as exact TPs
+- ❌ **Non‑matches**: Representative non‑match recorded for transparency
+- 🔁 **Batch + majority**: For each truth, batches of findings are evaluated with multiple LLM iterations; majority vote selects the outcome
+- 🧹 **False positives**: Remaining junior findings (excluding Info/Best Practices) are appended as FPs after matching
 
 ## Performance Tips
 
-1. **Model Selection**:
-   - **For Scoring**: Use `gpt-5-mini` (recommended) - needs long context for batch matching
-   - **For Baseline Analysis**: Use `gpt-5-mini` for best accuracy
-   - **Important**: The scorer processes ALL findings in a single LLM call, so a model with sufficient context window is critical
-   - Use `gpt-4o` if you encounter context length errors with very large projects
-   - Use `--patterns` to specify which files to analyze
+1. **Model selection**:
+   - Scoring default in this repo: `o4-mini` (set `MODEL` env var)
+   - Tune `ITERATIONS` (e.g., 3) and `BATCH_SIZE` (e.g., 10) via env or wrapper args
+   - Baseline analysis remains independent; pick your preferred analysis model
 
-2. **Batch Processing**:
+2. **Batch processing**:
    ```bash
-   # Process multiple projects
+   # Process multiple projects using the baseline runner
    for project in project1 project2 project3; do
-     ./run_pipeline.sh --project $project --source sources/$project
+     python baseline-runner/baseline_runner.py \
+       --project "$project" \
+       --source "sources/$project" \
+       --output baseline_results \
+       --model gpt-5-mini
    done
    ```
 
-3. **Caching**: Results are saved to disk for reprocessing
+3. **Caching**: Scorer writes per‑project evaluated results and a Markdown report; re‑runs reuse prepared data
 
 ## Output Formats
 
@@ -544,16 +442,18 @@ The scorer enforces EXTREMELY STRICT matching criteria:
 }
 ```
 
-### Scoring Results  
+### Scoring Results (AuditAgent algorithm)
+Per‑project evaluated results are written to `<OUTPUT_ROOT>/<project>_results.json` as an array of evaluated findings. Example item:
 ```json
 {
-  "total_expected": 10,
-  "true_positives": 6,
-  "detection_rate": 0.6,
-  "matched_findings": [{
-    "confidence": 1.0,
-    "justification": "Perfect match: identical vulnerability"
-  }]
+  "is_match": true,
+  "is_partial_match": false,
+  "is_fp": false,
+  "explanation": "Exact match: same function and root cause",
+  "severity_from_junior_auditor": "High",
+  "severity_from_truth": "High",
+  "index_of_finding_from_junior_auditor": 3,
+  "finding_description_from_junior_auditor": "Unchecked external call in withdraw() allows reentrancy"
 }
 ```
 

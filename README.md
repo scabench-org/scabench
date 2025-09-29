@@ -2,10 +2,6 @@
 
 A comprehensive framework for evaluating security analysis tools and AI agents on real-world smart contract vulnerabilities. ScaBench provides curated datasets from recent audits and official tooling for consistent evaluation.
 
-## 📚 Dataset Documentation
-
-- **[Dataset Format & Statistics](./datasets/README.md)** - Complete dataset information
-
 ## Features
 
 - 🎯 **Curated Datasets**: Real-world vulnerabilities from Code4rena, Cantina, and Sherlock audits

@@ -183,7 +183,7 @@ PROJECT_ID="code4rena_iq-ai_2025_03"  # Example - check dataset for exact ID
 
 # Step 3: Download the source code
 python dataset-generator/checkout_sources.py \
-  --dataset datasets/curated-2025-08-18.json \
+  --dataset datasets/curated-2025-08-18/curated-2025-08-18.json \
   --project $PROJECT_ID \
   --output sources/
 
@@ -231,7 +231,7 @@ export OPENAI_API_KEY="your-key-here"
 
 # Step 2: Download ALL project sources (this may take a while)
 python dataset-generator/checkout_sources.py \
-  --dataset datasets/curated-2025-08-18.json \
+  --dataset datasets/curated-2025-08-18/curated-2025-08-18.json \
   --output sources/
 
 # Step 3: Run baseline on ALL projects (this will take hours)
@@ -318,7 +318,7 @@ python -m scoring_algo.generate_report --benchmarks "$OUTPUT_ROOT" --scan-root "
 **Step 1: Get the source code**
 ```bash
 python dataset-generator/checkout_sources.py \
-  --dataset datasets/curated-2025-08-18.json \
+  --dataset datasets/curated-2025-08-18/curated-2025-08-18.json \
   --output sources/
 ```
 

@@ -28,6 +28,29 @@ from openai import OpenAI
 console = Console()
 
 
+def is_test_file(path: Path) -> bool:
+    """Return True for test contracts that should not be analyzed as audit targets.
+
+    The plain ``'test' in name`` check misses Foundry test contracts such as
+    ``Counter.t.sol`` (there is no ``test`` substring in the name) and contracts
+    placed under a ``test/`` directory. Both are handled explicitly so they don't
+    inflate the file count or findings. This only ever excludes more files; it
+    never re-includes any that the previous check already dropped.
+
+    Pass a repo-relative path (e.g. ``path.relative_to(source_dir)``): the
+    directory check looks at every path component, so an absolute path whose
+    parent directories happen to contain ``test`` (say a data root named
+    ``audit-tests/``) must not be handed in directly, or it would filter every
+    file in the repo.
+    """
+    name = path.name.lower()
+    if name.endswith(".t.sol"):
+        return True
+    if any(part.lower() in {"test", "tests"} for part in path.parts):
+        return True
+    return "test" in name
+
+
 class Severity(str, Enum):
     """Vulnerability severity levels."""
     CRITICAL = "critical"
@@ -258,9 +281,17 @@ Identify and report security vulnerabilities found."""
             for pattern in patterns:
                 files.extend(source_dir.glob(pattern))
         
-        # Remove duplicates and filter
+        # Remove duplicates and filter (test files are matched on the repo-relative
+        # path so directories above source_dir cannot trigger the test-dir check)
         files = list(set(files))
-        files = [f for f in files if f.is_file() and 'test' not in f.name.lower()]
+
+        def _repo_relative(p: Path) -> Path:
+            try:
+                return p.relative_to(source_dir)
+            except ValueError:
+                return Path(p.name)
+
+        files = [f for f in files if f.is_file() and not is_test_file(_repo_relative(f))]
         
         if not files:
             console.print(f"[yellow]No files found to analyze[/yellow]")
